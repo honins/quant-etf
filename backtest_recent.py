@@ -79,15 +79,19 @@ def main():
             is_bull = market_status_map.get(trade_date, True) # 默认 True 避免漏数据
             
             if not is_bull:
-                adjusted_probs.append(0.0) # 熊市禁入
-                bear_days += 1
+                # 熊市：仅允许超高分抄底
+                if prob >= 0.75:
+                    adjusted_probs.append(prob)
+                else:
+                    adjusted_probs.append(0.0)
+                    bear_days += 1
             else:
                 adjusted_probs.append(prob)
                 
         adjusted_probs = np.array(adjusted_probs)
         
-        # 执行回测
-        res = backtester.run(test_df, adjusted_probs, threshold=0.6)
+        # 执行回测 (阈值放宽至 0.45)
+        res = backtester.run(test_df, adjusted_probs, threshold=0.45)
         
         res['code'] = code
         res['name'] = tickers.TICKERS[code]

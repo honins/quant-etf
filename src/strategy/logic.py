@@ -22,12 +22,12 @@ class StrategyFilter:
         market_status = "Bull Market" if is_bull_market else "Bear Market"
         
         if is_bull_market:
-            # 牛市：AI 进攻模式，放宽标准，0.5分即可尝试
-            is_buy = score >= 0.5
+            # 牛市：AI 进攻模式，适度放宽标准，0.45分即可尝试
+            is_buy = score >= 0.45
         else:
-            # 熊市：规则防守模式，严格禁止开新仓
-            # "指数跌破 60日均线，AI 给分再高也不买"
-            is_buy = False
+            # 熊市：规则防守模式
+            # 只有 AI 评分极高 (>= 0.75) 时才允许左侧抄底，否则空仓
+            is_buy = score >= 0.75
             
         return is_buy, market_status
 
