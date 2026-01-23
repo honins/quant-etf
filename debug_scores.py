@@ -9,23 +9,26 @@ from src.models.xgb_model import XGBoostModel
 def main():
     print("🔍 Debugging Scores for broad-based ETFs...")
     
-    # 关注的标的
-    target_codes = ["510050.SH", "510300.SH", "510500.SH", "588000.SH"]
+    # 加载模型
+    model = XGBoostModel(model_path="data/xgb_model.json")
+    if not model.load_model():
+        print("Model not found")
+        return
     
     loader = TushareLoader()
     data_manager = DataManager(loader)
     feature_eng = FeatureEngineer()
-    model = XGBoostModel()
-    model.load_model()
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=90)
     start_date_str = start_date.strftime("%Y%m%d")
     
-    print(f"{'Code':<10} {'Name':<10} {'Max Score':<10} {'Avg Score':<10} {'Days > 0.5'}")
-    print("-" * 60)
+    # 收集所有历史评分
+    all_scores = []
     
-    for code in target_codes:
+    ticker_list = tickers.get_ticker_list()
+    
+    for code in ticker_list:
         df = data_manager.update_and_get_data(code)
         if df.empty: continue
         
@@ -37,12 +40,34 @@ def main():
         
         probs = model.predict_batch(test_df)
         
-        max_score = probs.max()
-        avg_score = probs.mean()
-        high_score_days = (probs > 0.5).sum()
-        
         name = tickers.TICKERS.get(code, code)
-        print(f"{code:<10} {name:<10} {max_score:.4f}     {avg_score:.4f}     {high_score_days}")
+        for date, score, price in zip(test_df['trade_date'], probs, test_df['close']):
+            all_scores.append({
+                'date': date,
+                'code': code,
+                'name': name,
+                'score': float(score),
+                'price': price
+            })
+            
+    # 排序
+    all_scores.sort(key=lambda x: x['score'], reverse=True)
+    
+    print("\n" + "="*80)
+    print(f"🏆 Top 10 Highest Scores (Last 3 Months)")
+    print("="*80)
+    print(f"{'Date':<12} {'Name':<12} {'Code':<10} {'Score':<8} {'Price'}")
+    print("-" * 80)
+    for item in all_scores[:10]:
+        print(f"{item['date']:<12} {item['name']:<12} {item['code']:<10} {item['score']:.4f}   {item['price']:.3f}")
+        
+    print("\n" + "="*80)
+    print(f"🧊 Top 10 Lowest Scores (Last 3 Months)")
+    print("="*80)
+    print(f"{'Date':<12} {'Name':<12} {'Code':<10} {'Score':<8} {'Price'}")
+    print("-" * 80)
+    for item in all_scores[-10:]:
+        print(f"{item['date']:<12} {item['name']:<12} {item['code']:<10} {item['score']:.4f}   {item['price']:.3f}")
 
 if __name__ == "__main__":
     main()

@@ -26,7 +26,7 @@ def main():
     strat_filter = StrategyFilter()
     
     # 加载模型
-    model = XGBoostModel()
+    model = XGBoostModel(model_path="data/xgb_model.json")
     if not model.load_model():
         print("❌ XGBoost model not found. Please train first.")
         return
