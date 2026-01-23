@@ -86,7 +86,7 @@ def main():
         score = model.predict(df)
         
         # d. 策略过滤
-        is_buy, market_status = strat_filter.filter_signal(score, index_df)
+        is_buy, market_status = strat_filter.filter_signal(score, index_df, code=code)
         
         # e. 风控计算
         risk_data = risk_manager.calculate_stops(df)

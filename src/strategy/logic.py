@@ -5,7 +5,7 @@ class StrategyFilter:
     """
     策略过滤器：结合大盘趋势调整买入标准
     """
-    def filter_signal(self, score: float, index_df: pd.DataFrame) -> tuple[bool, str]:
+    def filter_signal(self, score: float, index_df: pd.DataFrame, code: str = "") -> tuple[bool, str]:
         """
         根据大盘状态过滤个股信号
         返回: (是否建议买入, 状态描述)
@@ -22,8 +22,22 @@ class StrategyFilter:
         market_status = "Bull Market" if is_bull_market else "Bear Market"
         
         if is_bull_market:
-            # 牛市：AI 进攻模式，适度放宽标准，0.45分即可尝试
-            is_buy = score >= 0.45
+            # 牛市：AI 进攻模式
+            # 对于高弹性/激进品种，进一步放宽标准
+            # 588000.SH (科创50), 159915.SZ (创业板)
+            # 512480.SH (半导体), 515030.SH (新能源车)
+            aggressive_tickers = [
+                "588000.SH", "159915.SZ", 
+                "512480.SH", "515030.SH"
+            ]
+            
+            if code in aggressive_tickers:
+                threshold = 0.45
+                market_status += " (Aggressive)"
+            else:
+                threshold = 0.6  # 普通标的维持 0.6 以求稳
+                
+            is_buy = score >= threshold
         else:
             # 熊市：规则防守模式
             # 只有 AI 评分极高 (>= 0.75) 时才允许左侧抄底，否则空仓

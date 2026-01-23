@@ -86,7 +86,23 @@ def main():
                     adjusted_probs.append(0.0)
                     bear_days += 1
             else:
-                adjusted_probs.append(prob)
+                # 牛市：对激进标的放宽阈值
+                aggressive_tickers = [
+                    "588000.SH", "159915.SZ",
+                    "512480.SH", "515030.SH"
+                ]
+                if code in aggressive_tickers:
+                     # 激进标的：阈值 0.45
+                     # 下面 backtester.run 的阈值统一为 0.45
+                     # 所以这里直接传入原始概率即可
+                     adjusted_probs.append(prob)
+                else:
+                     # 普通标的：阈值 0.60
+                     # 如果 prob < 0.60，强制置0
+                     if prob < 0.60:
+                         adjusted_probs.append(0.0)
+                     else:
+                         adjusted_probs.append(prob)
                 
         adjusted_probs = np.array(adjusted_probs)
         
