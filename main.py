@@ -7,7 +7,6 @@ from src.data_loader.tushare_loader import TushareLoader
 from src.data_loader.data_manager import DataManager
 from src.features.technical import FeatureEngineer
 from src.models.scoring_model import RuleBasedModel
-from src.models.ml_model import MLModel
 from src.models.xgb_model import XGBoostModel
 from src.strategy.logic import StrategyFilter, RiskManager
 from src.utils.reporter import Reporter
@@ -38,17 +37,7 @@ def main():
     except Exception as e:
         print(f"XGB load failed: {e}")
 
-    # 2. Try Random Forest (if XGB failed)
-    if model is None:
-        try:
-            rf = MLModel()
-            if rf.load_model():
-                print("🤖 Loaded AI Model (Random Forest).")
-                model = rf
-        except Exception:
-            pass
-            
-    # 3. Fallback to Rules
+    # 2. Fallback to Rules
     if model is None:
         print("⚠️ No trained AI models found. Falling back to RuleBasedModel.")
         print("Tip: Run 'python train_and_backtest.py' to train the AI model first.")

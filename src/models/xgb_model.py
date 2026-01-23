@@ -6,16 +6,15 @@ from sklearn.metrics import precision_score, roc_auc_score
 from src.models.scoring_model import BaseModel
 
 class XGBoostModel(BaseModel):
-    def __init__(self, model_path="data/xgb_model.pkl"):
+    def __init__(self, model_path="data/xgb_model.json"):
         # XGBoost 参数配置
         self.params = {
             'objective': 'binary:logistic',
             'max_depth': 5,
-            'eta': 0.05,            # 学习率
+            # 'learning_rate' and 'scale_pos_weight' will be set dynamically in train()
             'subsample': 0.8,       # 随机采样，防止过拟合
             'colsample_bytree': 0.8,
             'eval_metric': 'auc',
-            'scale_pos_weight': 3,  # 样本不平衡处理 (假设正样本少)
             'seed': 42
         }
         self.num_boost_round = 200
@@ -44,19 +43,44 @@ class XGBoostModel(BaseModel):
         X = train_df[self.feature_cols]
         y = train_df['target']
         
-        # 转换为 DMatrix
-        dtrain = xgb.DMatrix(X, label=y)
+        # 动态计算 scale_pos_weight
+        pos_count = y.sum()
+        neg_count = len(y) - pos_count
+        scale_pos_weight = neg_count / pos_count if pos_count > 0 else 1.0
         
-        # 训练
-        self.model = xgb.train(self.params, dtrain, num_boost_round=self.num_boost_round)
+        # 更新参数
+        self.params['scale_pos_weight'] = scale_pos_weight
+        self.params['learning_rate'] = self.params.pop('eta', 0.05) # Rename eta to learning_rate
+
+        # 划分训练集和验证集 (80% Train, 20% Val)
+        from sklearn.model_selection import train_test_split
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        
+        # 转换为 DMatrix
+        dtrain = xgb.DMatrix(X_train, label=y_train)
+        dval = xgb.DMatrix(X_val, label=y_val)
+        
+        # 训练 (引入 Early Stopping)
+        evals = [(dtrain, 'train'), (dval, 'eval')]
+        self.model = xgb.train(
+            self.params, 
+            dtrain, 
+            num_boost_round=self.num_boost_round,
+            evals=evals,
+            early_stopping_rounds=20,
+            verbose_eval=20
+        )
         self.is_trained = True
         
-        # 训练集评估
-        y_pred_prob = self.model.predict(dtrain)
+        # 打印最佳迭代次数
+        print(f"Best iteration: {self.model.best_iteration}")
+        
+        # 验证集评估
+        y_pred_prob = self.model.predict(dval)
         y_pred = (y_pred_prob > 0.5).astype(int)
         
-        print(f"XGB Train Precision: {precision_score(y, y_pred):.2f}")
-        print(f"XGB Train ROC-AUC: {roc_auc_score(y, y_pred_prob):.2f}")
+        print(f"XGB Val Precision: {precision_score(y_val, y_pred):.2f}")
+        print(f"XGB Val ROC-AUC: {roc_auc_score(y_val, y_pred_prob):.2f}")
 
     def predict(self, df: pd.DataFrame) -> float:
         """
@@ -87,14 +111,29 @@ class XGBoostModel(BaseModel):
         return self.model.predict(dtest)
 
     def save_model(self):
-        joblib.dump(self.model, self.model_path)
+        # 使用 XGBoost 原生保存方法 (推荐 JSON)
+        self.model.save_model(self.model_path)
         print(f"XGBoost Model saved to {self.model_path}")
 
     def load_model(self) -> bool:
         try:
-            self.model = joblib.load(self.model_path)
+            # 检查文件是否存在
+            import os
+            if not os.path.exists(self.model_path):
+                # 尝试兼容旧的 pkl 文件 (如果 json 不存在)
+                pkl_path = self.model_path.replace('.json', '.pkl')
+                if os.path.exists(pkl_path):
+                    print(f"Loading legacy model from {pkl_path}...")
+                    self.model = joblib.load(pkl_path)
+                    self.is_trained = True
+                    return True
+                print(f"Model file {self.model_path} not found.")
+                return False
+            
+            self.model = xgb.Booster()
+            self.model.load_model(self.model_path)
             self.is_trained = True
             return True
-        except FileNotFoundError:
-            print(f"Model file {self.model_path} not found.")
+        except Exception as e:
+            print(f"Failed to load model: {e}")
             return False
