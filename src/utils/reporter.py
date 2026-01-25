@@ -7,10 +7,11 @@ class Reporter:
     def __init__(self):
         self.report_dir = settings.REPORTS_DIR
 
-    def generate_markdown(self, results: list, market_status: str):
+    def generate_markdown(self, results: list, market_status: str, holdings_status: list = None):
         """
         生成每日分析报告
         results: list of dict, 每个元素是一个标的的分析结果
+        holdings_status: list of dict, 持仓监控结果
         """
         today = datetime.now().strftime("%Y-%m-%d")
         filename = self.report_dir / f"daily_report_{today}.md"
@@ -23,6 +24,18 @@ class Reporter:
         content.append(f"### 🌊 市场状态: **{market_status}**\n")
         content.append("---\n")
         
+        # 新增：持仓监控板块
+        if holdings_status:
+            content.append("## 🎒 持仓监控 (Holdings)\n")
+            content.append("| 代码 | 名称 | 成本价 | 现价 | 浮盈 | 移动止盈线 | 状态 |\n")
+            content.append("|---|---|---|---|---|---|---|\n")
+            for h in holdings_status:
+                pnl_str = f"{h['pnl_pct']:.2f}%"
+                color = "🔴" if h['pnl_pct'] < 0 else "🟢"
+                row = f"| {h['code']} | {h['name']} | {h['buy_price']} | {h['current_price']} | {color} {pnl_str} | **{h['trailing_stop']}** | {h['status']} |"
+                content.append(row + "\n")
+            content.append("\n---\n")
+
         content.append("## 🚀 重点关注 (Score >= 0.6)\n")
         
         high_score_found = False

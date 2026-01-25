@@ -1,16 +1,9 @@
 import pandas as pd
 import numpy as np
 
-try:
-    import talib
-    HAS_TALIB = True
-except ImportError:
-    HAS_TALIB = False
-    print("Warning: TA-Lib not found. Using Pandas implementation.")
-
 class FeatureEngineer:
     """
-    计算技术指标
+    计算技术指标 (Pure Pandas Implementation)
     """
     
     @staticmethod
@@ -22,41 +15,7 @@ class FeatureEngineer:
         # 确保按日期升序
         df = df.sort_values('trade_date')
         
-        if HAS_TALIB:
-            return FeatureEngineer._calc_with_talib(df)
-        else:
-            return FeatureEngineer._calc_with_pandas(df)
-
-    @staticmethod
-    def _calc_with_talib(df: pd.DataFrame) -> pd.DataFrame:
-        # TA-Lib 需要 numpy array (float)
-        close = df['close'].values
-        high = df['high'].values
-        low = df['low'].values
-        vol = df['vol'].values
-
-        # 1. 均线 (MA)
-        df['ma5'] = talib.SMA(close, timeperiod=5)
-        df['ma20'] = talib.SMA(close, timeperiod=20)
-        df['ma60'] = talib.SMA(close, timeperiod=60)
-        
-        # 2. 相对强弱指标 (RSI)
-        df['rsi_6'] = talib.RSI(close, timeperiod=6)
-        df['rsi_14'] = talib.RSI(close, timeperiod=14)
-        
-        # 3. 波动率 (ATR) - 用于止损
-        df['atr'] = talib.ATR(high, low, close, timeperiod=14)
-        
-        # 4. 能量潮 (OBV) - 资金流向
-        df['obv'] = talib.OBV(close, vol)
-        
-        # 5. MACD
-        df['macd'], df['macdsignal'], df['macdhist'] = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-
-        # 6. 布林带 (Bollinger Bands)
-        df['upper'], df['middle'], df['lower'] = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
-
-        return df
+        return FeatureEngineer._calc_with_pandas(df)
 
     @staticmethod
     def _calc_with_pandas(df: pd.DataFrame) -> pd.DataFrame:

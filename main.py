@@ -10,6 +10,7 @@ from src.models.scoring_model import RuleBasedModel
 from src.models.xgb_model import XGBoostModel
 from src.strategy.logic import StrategyFilter, RiskManager
 from src.utils.reporter import Reporter
+from src.utils.holdings_manager import HoldingsManager
 
 def main():
     print("🚀 Starting Quant-ETF System...")
@@ -23,6 +24,7 @@ def main():
 
     data_manager = DataManager(loader)
     feature_eng = FeatureEngineer()
+    holdings_manager = HoldingsManager()
     
     # 切换为 ML 模型
     # 优先尝试加载 XGBoost，其次 Random Forest，最后回退到规则模型
@@ -100,6 +102,9 @@ def main():
             'risk': risk_data
         })
         
+    # 3.5 检查现有持仓 (新增功能)
+    holdings_status = holdings_manager.check_holdings(data_manager, feature_eng)
+    
     # 4. 生成报告
     print("📝 Generating Report...")
     # 获取最后计算的 market_status，如果没跑循环则默认 Unknown
@@ -107,7 +112,7 @@ def main():
     if 'market_status' in locals():
         m_status = market_status
         
-    reporter.generate_markdown(results, m_status)
+    reporter.generate_markdown(results, m_status, holdings_status)
     print("✅ Done!")
 
 if __name__ == "__main__":
