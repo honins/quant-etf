@@ -8,6 +8,8 @@ from src.features.technical import FeatureEngineer
 from src.models.xgb_model import XGBoostModel
 from src.backtest.backtester import Backtester
 
+from datetime import datetime, timedelta
+
 def main():
     print("🧠 Starting Model Training (XGBoost)...")
     
@@ -41,9 +43,14 @@ def main():
         return
 
     full_df = pd.concat(all_data)
-    split_date = '20250101'
     
-    train_df = full_df[full_df['trade_date'] < split_date]
+    # 动态设定分割点：训练集使用直到 3 个月前的数据
+    # 这样可以让模型学习到 2025-01-01 到 2025-10-25 期间的市场特征
+    split_date_obj = datetime.now() - timedelta(days=90)
+    split_date = split_date_obj.strftime("%Y%m%d")
+    print(f"📅 Split Date: {split_date} (Train before, Test after)")
+    
+    train_df = full_df[full_df['trade_date'].astype(str) < split_date]
     # test_df = full_df[full_df['trade_date'] >= split_date] # 仅用于统计
     
     # ==========================================
@@ -68,7 +75,7 @@ def main():
 def run_backtest(dataset, model, backtester, split_date):
     results = []
     for code, df in dataset.items():
-        test_part = df[df['trade_date'] >= split_date].copy()
+        test_part = df[df['trade_date'].astype(str) >= split_date].copy()
         if len(test_part) < 20:
             continue
         probs = model.predict_batch(test_part)

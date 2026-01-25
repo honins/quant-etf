@@ -68,9 +68,17 @@ class Reporter:
 
     def _add_ticker_section(self, content, res):
         risk = res['risk']
+        reasons = res.get('reasons', [])
+        
         content.append(f"### {res['name']} ({res['code']})\n")
         content.append(f"- **AI 评分**: {res['score']} / 1.0\n")
         content.append(f"- **当前价格**: {res['current_price']}\n")
+        
+        if reasons:
+            content.append(f"- **📝 技术面点评**:\n")
+            for reason in reasons:
+                content.append(f"    - {reason}\n")
+                
         if res['is_buy']:
             content.append(f"- **💡 决策建议**: **买入**\n")
             content.append(f"- **🛡️ 风控建议**:\n")

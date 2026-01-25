@@ -11,6 +11,7 @@ from src.models.xgb_model import XGBoostModel
 from src.strategy.logic import StrategyFilter, RiskManager
 from src.utils.reporter import Reporter
 from src.utils.holdings_manager import HoldingsManager
+from src.utils.explainer import TechnicalExplainer
 
 def main():
     print("🚀 Starting Quant-ETF System...")
@@ -93,13 +94,17 @@ def main():
         # e. 风控计算
         risk_data = risk_manager.calculate_stops(df)
         
+        # f. 技术面解释 (新增)
+        explanations = TechnicalExplainer.explain(df)
+        
         results.append({
             'code': code,
             'name': name,
             'score': score,
             'is_buy': is_buy,
             'current_price': df.iloc[-1]['close'],
-            'risk': risk_data
+            'risk': risk_data,
+            'reasons': explanations # 传递解释列表
         })
         
     # 3.5 检查现有持仓 (新增功能)
