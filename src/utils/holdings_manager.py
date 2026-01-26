@@ -1,9 +1,10 @@
-import json
+import yaml
 import pandas as pd
 import os
+from datetime import datetime
 from src.strategy.logic import RiskManager
 
-HOLDINGS_FILE = "config/holdings.json"
+HOLDINGS_FILE = "config/holdings.yml"
 
 class HoldingsManager:
     def __init__(self):
@@ -15,7 +16,7 @@ class HoldingsManager:
             return []
         try:
             with open(HOLDINGS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                data = yaml.safe_load(f)
                 return data.get("holdings", [])
         except Exception:
             return []
@@ -33,7 +34,17 @@ class HoldingsManager:
         for pos in self.holdings:
             code = pos['code']
             buy_price = pos['buy_price']
+            buy_date_str = str(pos.get('buy_date', ''))
             
+            # 计算持仓天数
+            days_held = 0
+            if buy_date_str:
+                try:
+                    buy_date = datetime.strptime(buy_date_str, "%Y%m%d")
+                    days_held = (datetime.now() - buy_date).days
+                except ValueError:
+                    days_held = -1
+
             # 获取数据
             df = data_manager.update_and_get_data(code)
             if df.empty:
@@ -68,7 +79,8 @@ class HoldingsManager:
                 "trailing_stop": trailing_stop,
                 "pnl_pct": pnl_pct,
                 "status": status,
-                "action": action
+                "action": action,
+                "days_held": days_held
             })
             
         return results

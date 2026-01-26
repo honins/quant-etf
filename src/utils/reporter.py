@@ -27,12 +27,13 @@ class Reporter:
         # 新增：持仓监控板块
         if holdings_status:
             content.append("## 🎒 持仓监控 (Holdings)\n")
-            content.append("| 代码 | 名称 | 成本价 | 现价 | 浮盈 | 移动止盈线 | 状态 |\n")
-            content.append("|---|---|---|---|---|---|---|\n")
+            content.append("| 代码 | 名称 | 持仓天数 | 成本价 | 现价 | 浮盈 | 移动止盈线 | 状态 |\n")
+            content.append("|---|---|---|---|---|---|---|---|\n")
             for h in holdings_status:
                 pnl_str = f"{h['pnl_pct']:.2f}%"
                 color = "🔴" if h['pnl_pct'] < 0 else "🟢"
-                row = f"| {h['code']} | {h['name']} | {h['buy_price']} | {h['current_price']} | {color} {pnl_str} | **{h['trailing_stop']}** | {h['status']} |"
+                days = f"{h['days_held']}天" if h['days_held'] >= 0 else "-"
+                row = f"| {h['code']} | {h['name']} | {days} | {h['buy_price']} | {h['current_price']} | {color} {pnl_str} | **{h['trailing_stop']}** | {h['status']} |"
                 content.append(row + "\n")
             content.append("\n---\n")
 

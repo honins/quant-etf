@@ -26,12 +26,7 @@ class StrategyFilter:
             # 对于高弹性/激进品种，进一步放宽标准
             # 588000.SH (科创50), 159915.SZ (创业板)
             # 512480.SH (半导体), 515030.SH (新能源车)
-            aggressive_tickers = [
-                "588000.SH", "159915.SZ", 
-                "512480.SH", "515030.SH"
-            ]
-            
-            if code in aggressive_tickers:
+            if code in settings.AGGRESSIVE_TICKERS:
                 threshold = 0.45
                 market_status += " (Aggressive)"
             else:
@@ -68,7 +63,7 @@ class RiskManager:
         
         # 吊灯止损 (Chandelier Exit): 最高价 - N * ATR
         # 获取过去22天的最高价
-        recent_high = df['high'].rolling(22).max().iloc[-1]
+        recent_high = df['high'].rolling(settings.EXIT_LOOKBACK_PERIOD).max().iloc[-1]
         trailing_stop = recent_high - (settings.ATR_MULTIPLIER * atr)
         
         return {

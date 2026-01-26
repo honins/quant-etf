@@ -27,5 +27,15 @@ class Settings:
     # 风险控制参数
     ATR_PERIOD = 14
     ATR_MULTIPLIER = 2.0  # 止损 = 2倍ATR
+    EXIT_LOOKBACK_PERIOD = 22 # 吊灯止损回溯周期
+
+    # 策略参数
+    # 牛市进攻模式标的
+    AGGRESSIVE_TICKERS = [
+        "588000.SH", # 科创50
+        "159915.SZ", # 创业板
+        "512480.SH", # 半导体
+        "515030.SH"  # 新能源车
+    ]
 
 settings = Settings()

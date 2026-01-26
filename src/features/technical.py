@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from config.settings import settings
 
 class FeatureEngineer:
     """
@@ -26,18 +27,27 @@ class FeatureEngineer:
         df['ma20'] = close.rolling(window=20).mean()
         df['ma60'] = close.rolling(window=60).mean()
         
-        # 2. RSI
+        # 2. RSI (Wilder's Smoothing)
         delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean() # 简化版RSI算法，非Wilder平滑
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['rsi_14'] = 100 - (100 / (1 + rs))
+        
+        # Helper for Wilder's Smoothing (RMA)
+        def calculate_rma(series, period):
+            return series.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+
+        # RSI 14
+        avg_gain_14 = calculate_rma(gain, 14)
+        avg_loss_14 = calculate_rma(loss, 14)
+        rs_14 = avg_gain_14 / avg_loss_14
+        df['rsi_14'] = 100 - (100 / (1 + rs_14))
         
         # RSI 6
-        gain6 = (delta.where(delta > 0, 0)).rolling(window=6).mean()
-        loss6 = (-delta.where(delta < 0, 0)).rolling(window=6).mean()
-        rs6 = gain6 / loss6
-        df['rsi_6'] = 100 - (100 / (1 + rs6))
+        avg_gain_6 = calculate_rma(gain, 6)
+        avg_loss_6 = calculate_rma(loss, 6)
+        rs_6 = avg_gain_6 / avg_loss_6
+        df['rsi_6'] = 100 - (100 / (1 + rs_6))
 
         # 3. ATR (简化版)
         # TR = max(high-low, abs(high-prev_close), abs(low-prev_close))
@@ -48,7 +58,7 @@ class FeatureEngineer:
         tr2 = (high - prev_close).abs()
         tr3 = (low - prev_close).abs()
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        df['atr'] = tr.rolling(window=14).mean()
+        df['atr'] = tr.rolling(window=settings.ATR_PERIOD).mean()
 
         # 4. OBV
         # if close > prev_close: vol else -vol

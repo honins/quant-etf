@@ -57,8 +57,8 @@ class XGBoostModel(BaseModel):
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         # 转换为 DMatrix
-        dtrain = xgb.DMatrix(X_train, label=y_train)
-        dval = xgb.DMatrix(X_val, label=y_val)
+        dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=self.feature_cols)
+        dval = xgb.DMatrix(X_val, label=y_val, feature_names=self.feature_cols)
         
         # 训练 (引入 Early Stopping)
         evals = [(dtrain, 'train'), (dval, 'eval')]
@@ -94,7 +94,7 @@ class XGBoostModel(BaseModel):
             return 0.0
             
         current_data = df.iloc[[-1]][self.feature_cols].fillna(0)
-        dtest = xgb.DMatrix(current_data)
+        dtest = xgb.DMatrix(current_data, feature_names=self.feature_cols)
         
         prob = self.model.predict(dtest)[0]
         return round(float(prob), 2)
@@ -107,7 +107,7 @@ class XGBoostModel(BaseModel):
             return np.zeros(len(df))
             
         data = df[self.feature_cols].fillna(0)
-        dtest = xgb.DMatrix(data)
+        dtest = xgb.DMatrix(data, feature_names=self.feature_cols)
         return self.model.predict(dtest)
 
     def save_model(self):

@@ -34,8 +34,8 @@ class TushareLoader(DataProvider):
             return df
             
         except Exception as e:
-            print(f"Error fetching data for {ts_code}: {e}")
-            return pd.DataFrame()
+           print(f"Error fetching data for {ts_code}: {e}")
+           return pd.DataFrame()
 
     def get_index_daily(self, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         try:
