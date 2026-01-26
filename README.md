@@ -16,7 +16,7 @@
 *   **🛡️ 混合策略 (Hybrid Strategy)**:
     *   **进攻**: 由 AI 负责，敏锐捕捉量价时空的共振机会。
     *   **防守**: 由规则负责，大盘熊市强制空仓，个股亏损强制止损。
-*   **🎒 持仓管家**: 自动跟踪您的持仓，每日计算**移动止盈位 (Trailing Stop)**，告诉您何时该止盈离场，锁住利润。
+*   **🎒 持仓管家**: 自动跟踪您的持仓，支持**分批加仓**管理，自动计算加权成本和持仓天数。每日计算**移动止盈位 (Trailing Stop)**，告诉您何时该止盈离场，锁住利润。
 *   **📝 智能点评**: 内置技术面解释器，将冷冰冰的指标翻译成“均线多头”、“超买风险”等通俗人话。
 *   **⚡ 极速响应**: 纯 Python (Pandas) 实现，无需安装复杂的 TA-Lib，开箱即用。
 
@@ -77,7 +77,24 @@ pip install -r requirements.txt
 1.  复制 `.env.example` 为 `.env`
 2.  填入您的 Tushare Token (注册获取: [https://tushare.pro/](https://tushare.pro/))
 
-### 3. 训练 AI 模型 (可选)
+### 3. 配置持仓 (可选)
+
+在 `config/holdings.yml` 中配置您的持仓信息，支持分批买入记录：
+
+```yaml
+holdings:
+  - code: 515070.SH
+    name: 人工智能ETF
+    transactions:
+      - date: "20260109"
+        price: 2.02
+        shares: 5000
+      - date: "20260115"
+        price: 2.10
+        shares: 5000
+```
+
+### 4. 训练 AI 模型 (可选)
 
 系统已内置了预训练好的模型。如果您想使用最新数据重新训练：
 
@@ -85,7 +102,7 @@ pip install -r requirements.txt
 python train_and_backtest.py
 ```
 
-### 4. 运行回测 (验证效果)
+### 5. 运行回测 (验证效果)
 
 想看看最近 2 个月哪些标的最赚钱？
 
