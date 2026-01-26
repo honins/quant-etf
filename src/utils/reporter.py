@@ -66,6 +66,7 @@ class Reporter:
             f.write("".join(content))
             
         print(f"Report generated: {filename}")
+        return filename
 
     def _add_ticker_section(self, content, res):
         risk = res['risk']

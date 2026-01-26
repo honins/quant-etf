@@ -12,6 +12,7 @@ from src.strategy.logic import StrategyFilter, RiskManager
 from src.utils.reporter import Reporter
 from src.utils.holdings_manager import HoldingsManager
 from src.utils.explainer import TechnicalExplainer
+from src.utils.feishu_bot import FeishuBot
 
 def main():
     print("🚀 Starting Quant-ETF System...")
@@ -117,8 +118,23 @@ def main():
     if 'market_status' in locals():
         m_status = market_status
         
-    reporter.generate_markdown(results, m_status, holdings_status)
-    print("✅ Done!")
+    report_path = reporter.generate_markdown(results, m_status, holdings_status)
+    print("✅ Report Generated!")
+    
+    # 5. 发送飞书通知 (替代邮件)
+    try:
+        # 读取报告内容
+        with open(report_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        bot = FeishuBot()
+        # 提取标题
+        title = f"Quant-ETF Daily Report ({datetime.now().strftime('%Y-%m-%d')})"
+        bot.send_markdown(title, content)
+    except Exception as e:
+        print(f"⚠️ Notification failed: {e}")
+    
+    print("🎉 All tasks completed.")
 
 if __name__ == "__main__":
     main()
