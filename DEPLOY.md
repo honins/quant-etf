@@ -50,6 +50,53 @@ docker logs -f quant-etf-bot
 
 ---
 
+## 🐢 部署步骤 (非 Docker 方式)
+
+如果您不想使用 Docker，可以直接在服务器上运行。
+
+### 1. 安装 Python3
+```bash
+sudo apt update
+sudo apt install python3 python3-pip
+```
+
+### 2. 一键后台启动
+我们提供了一个 `start_nohup.sh` 脚本，会自动安装依赖并后台运行。
+
+```bash
+chmod +x start_nohup.sh
+./start_nohup.sh
+```
+
+### 3. 验证
+```bash
+tail -f logs/scheduler.log
+```
+
+---
+
+## 🦅 进阶部署 (Systemd 开机自启)
+
+如果想让程序像系统服务一样稳定运行：
+
+1.  修改 `quant-etf.service` 中的 `WorkingDirectory` 和 `ExecStart` 路径。
+2.  复制服务文件：
+    ```bash
+    sudo cp quant-etf.service /etc/systemd/system/
+    ```
+3.  启动服务：
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable quant-etf
+    sudo systemctl start quant-etf
+    ```
+4.  查看状态：
+    ```bash
+    sudo systemctl status quant-etf
+    ```
+
+---
+
 ## 🛠️ 常用维护命令
 
 *   **查看日志**: `docker logs --tail 100 -f quant-etf-bot`

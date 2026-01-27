@@ -1,0 +1,15 @@
+[Unit]
+Description=Quant-ETF Trading Bot
+After=network.target
+
+[Service]
+# 请修改为你的实际路径
+WorkingDirectory=/root/quant-etf
+# 请修改为你的 python 路径 (which python3)
+ExecStart=/usr/bin/python3 scheduler.py
+Restart=always
+User=root
+EnvironmentFile=/root/quant-etf/.env
+
+[Install]
+WantedBy=multi-user.target
