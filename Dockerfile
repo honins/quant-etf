@@ -11,8 +11,8 @@ RUN echo 'Asia/Shanghai' >/etc/timezone
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装依赖 (使用清华源加速)
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tushare.pro/simple/
+# 安装依赖 (使用清华源加速，更稳定)
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 复制项目代码
 COPY . .
