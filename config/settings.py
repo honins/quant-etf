@@ -26,7 +26,8 @@ class Settings:
     
     # 风险控制参数
     ATR_PERIOD = 14
-    ATR_MULTIPLIER = 2.0  # 止损 = 2倍ATR
+    ATR_MULTIPLIER = 2.0  # 默认止损 = 2倍ATR
+    ATR_MULTIPLIER_AGGRESSIVE = 3.5 # 激进标的止损 = 3.5倍ATR (防止被洗出局)
     EXIT_LOOKBACK_PERIOD = 22 # 吊灯止损回溯周期
 
     # 策略参数

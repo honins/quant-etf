@@ -11,9 +11,3 @@ holdings:
       - date: "20260123"
         price: 1.99
         shares: 10000
-  - code: 159206.SZ
-    name: 科创50ETF
-    transactions:
-      - date: "20260123"
-        price: 1.99
-        shares: 10000

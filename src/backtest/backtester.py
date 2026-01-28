@@ -8,7 +8,7 @@ class Backtester:
         self.initial_capital = initial_capital
         self.risk_manager = RiskManager()
 
-    def run(self, df: pd.DataFrame, probs: np.ndarray, threshold=0.6) -> dict:
+    def run(self, df: pd.DataFrame, probs: np.ndarray, threshold=0.6, code: str = "") -> dict:
         """
         执行回测
         df: 包含行情数据的 DataFrame
@@ -24,6 +24,11 @@ class Backtester:
         # 移动止损价
         trailing_stop = 0.0
         entry_price = 0.0
+        
+        # 确定 ATR 乘数
+        multiplier = settings.ATR_MULTIPLIER
+        if code in settings.AGGRESSIVE_TICKERS:
+            multiplier = settings.ATR_MULTIPLIER_AGGRESSIVE
         
         for i in range(len(df) - 1):
             # 这里的 i 对应的是收盘后的决策时间点
@@ -79,10 +84,10 @@ class Backtester:
                     position = 0
                     trailing_stop = 0.0
                     continue
-
+                
                 # 如果没卖，更新移动止损线 (只上不下)
-                # 这里简单用最高价 - 2ATR
-                new_stop = high_price - (settings.ATR_MULTIPLIER * atr)
+                # 这里简单用最高价 - N * ATR
+                new_stop = high_price - (multiplier * atr)
                 if new_stop > trailing_stop:
                     trailing_stop = new_stop
 
@@ -99,7 +104,7 @@ class Backtester:
                         cash -= shares * buy_price
                         entry_price = buy_price
                         # 初始止损
-                        trailing_stop = buy_price - (settings.ATR_MULTIPLIER * atr)
+                        trailing_stop = buy_price - (multiplier * atr)
                         
                         trades.append({
                             'date': next_date,

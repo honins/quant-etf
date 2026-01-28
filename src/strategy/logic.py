@@ -23,20 +23,18 @@ class StrategyFilter:
         
         if is_bull_market:
             # 牛市：AI 进攻模式
-            # 对于高弹性/激进品种，进一步放宽标准
-            # 588000.SH (科创50), 159915.SZ (创业板)
-            # 512480.SH (半导体), 515030.SH (新能源车)
+            # 对于高弹性/激进品种，稍微放宽标准但维持在较高胜率区间
             if code in settings.AGGRESSIVE_TICKERS:
-                threshold = 0.45
+                threshold = 0.55 # 从 0.45 提高到 0.55
                 market_status += " (Aggressive)"
             else:
-                threshold = 0.6  # 普通标的维持 0.6 以求稳
+                threshold = 0.65 # 从 0.60 提高到 0.65
                 
             is_buy = score >= threshold
         else:
-            # 熊市：规则防守模式
-            # 只有 AI 评分极高 (>= 0.75) 时才允许左侧抄底，否则空仓
-            is_buy = score >= 0.75
+            # 熊市：极致防御模式
+            # 只有 AI 评分极高 (>= 0.80) 时才允许左侧抄底
+            is_buy = score >= 0.80 # 从 0.75 提高到 0.80
             
         return is_buy, market_status
 
@@ -44,7 +42,7 @@ class RiskManager:
     """
     风控模块：计算止损位
     """
-    def calculate_stops(self, df: pd.DataFrame, entry_price: float = None) -> dict:
+    def calculate_stops(self, df: pd.DataFrame, entry_price: float = None, code: str = "") -> dict:
         """
         计算初始止损和移动止损
         """
@@ -58,13 +56,18 @@ class RiskManager:
         # 如果没有指定入场价，假设按当前收盘价买入
         entry = entry_price if entry_price else close
         
+        # 确定 ATR 乘数
+        multiplier = settings.ATR_MULTIPLIER
+        if code in settings.AGGRESSIVE_TICKERS:
+            multiplier = settings.ATR_MULTIPLIER_AGGRESSIVE
+        
         # 初始止损：入场价 - N * ATR
-        initial_stop = entry - (settings.ATR_MULTIPLIER * atr)
+        initial_stop = entry - (multiplier * atr)
         
         # 吊灯止损 (Chandelier Exit): 最高价 - N * ATR
         # 获取过去22天的最高价
         recent_high = df['high'].rolling(settings.EXIT_LOOKBACK_PERIOD).max().iloc[-1]
-        trailing_stop = recent_high - (settings.ATR_MULTIPLIER * atr)
+        trailing_stop = recent_high - (multiplier * atr)
         
         return {
             "current_price": close,

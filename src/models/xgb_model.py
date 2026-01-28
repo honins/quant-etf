@@ -20,11 +20,12 @@ class XGBoostModel(BaseModel):
         self.num_boost_round = 200
         
         self.feature_cols = [
-            'ma5', 'ma20', 'ma60', 
-            'rsi_6', 'rsi_14', 
-            'atr', 'obv', 
-            'macd', 'macdsignal', 'macdhist',
-            'upper', 'lower'
+            'bias_5', 'bias_20', 'bias_60',  # 均线乖离
+            'rsi_6', 'rsi_14',               # 相对强弱
+            'atr_pct',                       # 相对波动率
+            'vol_ratio',                     # 量比
+            'macd_norm', 'macdsignal_norm', 'macdhist_norm', # 归一化MACD
+            'bb_pos'                         # 布林带位置
         ]
         self.model_path = model_path
         self.model = None
