@@ -1,146 +1,126 @@
+
 import pandas as pd
-from datetime import datetime, timedelta
 import numpy as np
+from datetime import datetime, timedelta
+from config import tickers
 from src.data_loader.tushare_loader import TushareLoader
 from src.data_loader.data_manager import DataManager
 from src.features.technical import FeatureEngineer
 from src.models.xgb_model import XGBoostModel
-from config import tickers
 
 def main():
-    print("⚖️ Verifying Alpha & Stress Testing...")
+    print("🔍 Verifying Alpha: Model Performance vs Market Environment...")
+    
+    # 1. 准备数据 (最近 6 个月)
+    start_date = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
     
     loader = TushareLoader()
     data_manager = DataManager(loader)
     feature_eng = FeatureEngineer()
-    model = XGBoostModel()
+    model = XGBoostModel(model_path="data/xgb_model.json")
     if not model.load_model():
         print("❌ Model not found.")
         return
 
-    # 1. 计算最近2个月的 Alpha
-    print("\n📊 1. Recent Performance (Last 60 Days)")
-    # 大盘基准
+    # 2. 获取大盘数据 (沪深300) 作为基准
+    print("📊 Fetching Market Index (000300.SH)...")
     index_df = data_manager.update_and_get_data('000300.SH', is_index=True)
-    index_df = feature_eng.calculate_technical_indicators(index_df)
-    
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=60)
-    start_date_str = start_date.strftime("%Y%m%d")
-    
-    idx_start_price = index_df[index_df['trade_date'].astype(str) >= start_date_str].iloc[0]['close']
-    idx_end_price = index_df.iloc[-1]['close']
-    market_return = (idx_end_price - idx_start_price) / idx_start_price
-    print(f"📉 Market (HS300) Return: {market_return*100:+.2f}%")
-    
-    # 策略收益 (取之前回测的几个代表性标的)
-    # 假设资金等分在 卫星、半导体、科创50、新能源车 四个标的上
-    portfolio = ['159206.SZ', '512480.SH', '588000.SH', '515030.SH']
-    port_rets = []
-    
-    for code in portfolio:
-        # 简易回测逻辑 (复用之前的逻辑)
-        df = data_manager.update_and_get_data(code)
-        df = feature_eng.calculate_technical_indicators(df)
-        test_df = df[df['trade_date'].astype(str) >= start_date_str].copy()
-        if test_df.empty: continue
-        
-        # 简单模拟：如果 AI > 0.45 且 Market > MA60 买入
-        # 这里直接引用 backtest_detail 的结果数据 (为了节省计算资源，直接硬编码之前算出的结果)
-        # 卫星: +72.45%, 半导体: +22.74%, 科创50: +17.29%, 新能源: +4.35%
-        pass 
-    
-    # 手动输入之前回测的结果进行加权平均
-    avg_strategy_ret = (0.7245 + 0.2274 + 0.1729 + 0.0435) / 4
-    print(f"🤖 Strategy Avg Return: {avg_strategy_ret*100:+.2f}%")
-    
-    alpha = avg_strategy_ret - market_return
-    print(f"🚀 Alpha (Excess Return): {alpha*100:+.2f}%")
-    
-    if alpha > 0.1:
-        print("✅ Conclusion: Strong Alpha exists in recent market.")
-    else:
-        print("⚠️ Conclusion: Returns mostly from Beta (Market).")
-
-    # 2. 压力测试：震荡下跌市 (2023-08-01 ~ 2023-11-01)
-    # 这段时间沪深300从 4000点 跌到 3500点，且中间伴随反弹震荡
-    print("\n🌪️ 2. Stress Test: Bear Market (2023.08 - 2023.11)")
-    stress_start = '20230801'
-    stress_end = '20231101'
-    
-    # 获取这段时间的大盘
-    stress_idx = index_df[(index_df['trade_date'].astype(str) >= stress_start) & 
-                          (index_df['trade_date'].astype(str) <= stress_end)]
-    if stress_idx.empty:
-        print("No data for stress period.")
+    if index_df.empty:
+        print("❌ Index data not found.")
         return
-        
-    s_idx_ret = (stress_idx.iloc[-1]['close'] - stress_idx.iloc[0]['close']) / stress_idx.iloc[0]['close']
-    print(f"📉 Market (HS300) Return: {s_idx_ret*100:+.2f}%")
     
-    # 测试策略在同一时期的表现
-    # 选取当时热门的 半导体(512480) 和 证券(512880, 假设有数据)
-    test_codes = ['512480.SH', '510300.SH']
+    # 计算大盘未来 5 天涨跌幅
+    indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=5)
+    # 大盘我们看整体趋势，用收盘价比较合理
+    index_df['market_ret_5d'] = index_df['close'].shift(-5) / index_df['close'] - 1
     
-    for code in test_codes:
+    # 将大盘数据转为字典方便查询: {date: market_ret}
+    market_ret_map = index_df.set_index('trade_date')['market_ret_5d'].to_dict()
+    
+    # 3. 获取所有个股信号
+    ticker_list = tickers.get_ticker_list()
+    all_signals = []
+    
+    print(f"Fetching tickers since {start_date}...")
+    for code in ticker_list:
         df = data_manager.update_and_get_data(code)
+        if df.empty:
+            continue
+            
         df = feature_eng.calculate_technical_indicators(df)
-        t_df = df[(df['trade_date'].astype(str) >= stress_start) & 
-                  (df['trade_date'].astype(str) <= stress_end)].copy()
+        df = df.dropna()
+        df = df[df['trade_date'].astype(str) >= start_date].copy()
         
-        if t_df.empty: continue
-        
-        # 跑回测
-        probs = model.predict_batch(t_df)
-        t_df['score'] = probs
-        
-        # 模拟交易
-        equity = 1.0
-        position = None
-        trade_count = 0
-        
-        for i in range(len(t_df)):
-            curr = t_df.iloc[i]
-            date = str(curr['trade_date'])
-            price = curr['close']
-            score = curr['score']
-            atr = curr['atr']
+        if len(df) < 10:
+            continue
             
-            # 大盘风控
-            idx_row = stress_idx[stress_idx['trade_date'].astype(str) == date]
-            is_bull = False
-            if not idx_row.empty:
-                is_bull = idx_row.iloc[0]['close'] > idx_row.iloc[0]['ma60']
-            
-            # 卖出
-            if position:
-                # 止损/止盈
-                if price < position['stop'] or price < position['trailing']:
-                    equity *= (price / position['price'])
-                    position = None
-                    trade_count += 1
-                else:
-                    # 更新止盈
-                    new_trailing = price - 2*atr
-                    if new_trailing > position['trailing']:
-                        position['trailing'] = new_trailing
-            
-            # 买入
-            elif position is None:
-                # 熊市阈值 0.75
-                threshold = 0.45 if is_bull else 0.75
-                if score >= threshold:
-                    position = {
-                        'price': price,
-                        'stop': price - 2*atr,
-                        'trailing': price - 2*atr
-                    }
+        # 预测
+        probs = model.predict_batch(df)
+        df['score'] = probs
         
-        # 结算
-        if position:
-            equity *= (t_df.iloc[-1]['close'] / position['price'])
-            
-        print(f"🤖 Strategy on {code}: {(equity-1)*100:+.2f}% (Trades: {trade_count})")
+        # 个股未来 5 天最高涨幅
+        future_highs = []
+        for i in range(1, 6):
+            future_highs.append(df['high'].shift(-i))
+        future_max_high = pd.concat(future_highs, axis=1).max(axis=1)
+        df['stock_max_ret_5d'] = future_max_high / df['close'] - 1
+        
+        df = df.dropna(subset=['stock_max_ret_5d'])
+        
+        # 关联大盘表现
+        df['market_ret_5d'] = df['trade_date'].map(market_ret_map)
+        
+        # 只保留分数较高 和 较低 的样本进行对比
+        # High Score: > 0.60
+        # Low Score: < 0.50
+        all_signals.append(df[['trade_date', 'score', 'stock_max_ret_5d', 'market_ret_5d']])
+
+    if not all_signals:
+        print("No signals found.")
+        return
+
+    full_df = pd.concat(all_signals)
+    full_df = full_df.dropna(subset=['market_ret_5d']) # 确保有大盘数据
+    
+    # 4. 划分市场环境
+    # Bear Market: 大盘未来5天跌幅 < -1%
+    # Neutral: -1% <= 跌幅 <= 1%
+    # Bull Market: 大盘未来5天涨幅 > 1%
+    
+    def get_market_env(ret):
+        if ret < -0.01: return '📉 Bear (Index < -1%)'
+        if ret > 0.01: return '📈 Bull (Index > 1%)'
+        return '⚖️ Shock (-1% ~ 1%)'
+        
+    full_df['market_env'] = full_df['market_ret_5d'].apply(get_market_env)
+    
+    # 5. 统计不同环境下，高分信号的表现
+    # 我们关注：在熊市里，高分信号是否还能赚钱？
+    
+    high_score_df = full_df[full_df['score'] >= 0.65]
+    
+    print("\n🧐 Truth Test: Does the model work in Bear Markets?")
+    print("=" * 80)
+    print(f"Analyzing High Confidence Signals (Score >= 0.65) by Market Environment")
+    print("-" * 80)
+    print(f"{'Market Env':<25} {'Signals':<10} {'Win Rate (>2%)':<18} {'Avg Stock Ret':<15} {'Avg Index Ret':<15}")
+    print("-" * 80)
+    
+    grouped = high_score_df.groupby('market_env', observed=False)
+    
+    for name, group in grouped:
+        count = len(group)
+        hits = len(group[group['stock_max_ret_5d'] > 0.02])
+        win_rate = hits / count if count > 0 else 0
+        avg_stock_ret = group['stock_max_ret_5d'].mean()
+        avg_index_ret = group['market_ret_5d'].mean()
+        
+        print(f"{name:<25} {count:<10} {win_rate*100:6.1f}%            {avg_stock_ret*100:6.2f}%          {avg_index_ret*100:6.2f}%")
+        
+    print("-" * 80)
+    print("\n💡 Interpretation:")
+    print("1. If Win Rate is high (>70%) even in 'Bear' markets, the model has REAL Alpha.")
+    print("2. If Win Rate drops significantly in 'Bear' markets, the model relies on Beta.")
 
 if __name__ == "__main__":
     main()
