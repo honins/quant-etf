@@ -25,6 +25,7 @@ class Backtester:
         trailing_stop = 0.0
         entry_price = 0.0
         
+        peak_equity = self.initial_capital
         for i in range(len(df) - 1):
             # 这里的 i 对应的是收盘后的决策时间点
             # 交易将在 i+1 开盘时执行 (简化起见，这里假设以 i+1 的 open 价格成交)
@@ -40,6 +41,22 @@ class Backtester:
             
             current_equity = cash + position * close_price
             equity_curve.append({'date': date, 'equity': current_equity})
+            if current_equity > peak_equity:
+                peak_equity = current_equity
+            drawdown = (peak_equity - current_equity) / peak_equity if peak_equity > 0 else 0.0
+            if drawdown >= settings.MAX_DRAWDOWN_STOP:
+                if position > 0:
+                    sell_price = next_open
+                    cash += position * sell_price
+                    trades.append({
+                        'date': next_date,
+                        'action': 'SELL (MaxDD)',
+                        'price': sell_price,
+                        'pnl': (sell_price - entry_price) * position
+                    })
+                    position = 0
+                    trailing_stop = 0.0
+                break
             
             # --- 卖出逻辑 (持仓时检查) ---
             if position > 0:
@@ -88,7 +105,7 @@ class Backtester:
 
             # --- 买入逻辑 (空仓时检查) ---
             if position == 0:
-                if score >= threshold:
+                if score is not None and np.isfinite(score) and score > 0 and score >= threshold:
                     # 满仓买入 (简化)
                     buy_price = next_open
                     # 计算可买股数 (向下取整到100)
@@ -110,7 +127,22 @@ class Backtester:
 
         # 结算最后一天的净值
         final_equity = cash + position * df.iloc[-1]['close']
+        equity_curve.append({'date': df.iloc[-1]['trade_date'], 'equity': final_equity})
         
+        equity_values = np.array([p['equity'] for p in equity_curve], dtype=float)
+        daily_returns = np.diff(equity_values) / equity_values[:-1] if len(equity_values) > 1 else np.array([])
+        vol = float(np.std(daily_returns, ddof=1) * np.sqrt(252)) if len(daily_returns) > 1 else 0.0
+        sharpe = float((np.mean(daily_returns) / np.std(daily_returns, ddof=1)) * np.sqrt(252)) if len(daily_returns) > 1 and np.std(daily_returns, ddof=1) > 0 else 0.0
+        peak = -np.inf
+        max_drawdown = 0.0
+        for eq in equity_values:
+            if eq > peak:
+                peak = eq
+            if peak > 0:
+                dd = (peak - eq) / peak
+                if dd > max_drawdown:
+                    max_drawdown = dd
+
         # 计算指标
         total_return = (final_equity - self.initial_capital) / self.initial_capital
         win_trades = [t for t in trades if t['action'].startswith('SELL') and t['pnl'] > 0]
@@ -123,5 +155,9 @@ class Backtester:
             "win_rate": win_rate,
             "num_trades": len(win_trades) + len(loss_trades),
             "final_equity": final_equity,
+            "max_drawdown": max_drawdown,
+            "volatility": vol,
+            "sharpe": sharpe,
+            "equity_curve": equity_curve,
             "trades": trades
         }

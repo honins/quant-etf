@@ -26,8 +26,9 @@ class Settings:
     
     # 风险控制参数
     ATR_PERIOD = 14
-    ATR_MULTIPLIER = 2.0  # 止损 = 2倍ATR
+    ATR_MULTIPLIER = 1.3  # 止损 = 1.3倍ATR
     EXIT_LOOKBACK_PERIOD = 22 # 吊灯止损回溯周期
+    MAX_DRAWDOWN_STOP = 0.05
 
     # 策略参数
     # 牛市进攻模式标的
@@ -35,7 +36,17 @@ class Settings:
         "588000.SH", # 科创50
         "159915.SZ", # 创业板
         "512480.SH", # 半导体
-        "515030.SH"  # 新能源车
+        "515030.SH", # 新能源车
+        "515070.SH"
     ]
+    TICKER_BULL_THRESHOLDS = {
+        "588000.SH": 0.60,
+        "515070.SH": 0.60
+    }
+    USE_DYNAMIC_THRESHOLD = True
+    DYNAMIC_THRESHOLD_LOOKBACK = 60
+    DYNAMIC_THRESHOLD_QUANTILE = 0.85
+    DYNAMIC_THRESHOLD_MIN = 0.55
+    DYNAMIC_THRESHOLD_MAX = 0.75
 
 settings = Settings()

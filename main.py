@@ -66,6 +66,13 @@ def main():
     # 3. 遍历标的池
     results = []
     ticker_list = tickers.get_ticker_list()
+
+    def use_dynamic_for_code(code: str):
+        if code in tickers.WIDE_INDEX_TICKERS:
+            return False
+        if code in tickers.SECTOR_TICKERS:
+            return True
+        return settings.USE_DYNAMIC_THRESHOLD
     
     for code in ticker_list:
         name = tickers.TICKERS[code]
@@ -88,9 +95,16 @@ def main():
 
         # c. 模型打分
         score = model.predict(df)
+
+        dynamic_threshold = None
+        use_dynamic = use_dynamic_for_code(code)
+        if use_dynamic and callable(getattr(model, "predict_batch", None)):
+            lookback = min(settings.DYNAMIC_THRESHOLD_LOOKBACK, len(df))
+            recent_scores = model.predict_batch(df.tail(lookback))
+            dynamic_threshold = StrategyFilter.dynamic_threshold(recent_scores)
         
         # d. 策略过滤
-        is_buy, market_status = strat_filter.filter_signal(score, index_df, code=code)
+        is_buy, market_status = strat_filter.filter_signal(score, index_df, code=code, dynamic_threshold=dynamic_threshold)
         
         # e. 风控计算
         risk_data = risk_manager.calculate_stops(df)

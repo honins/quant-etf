@@ -1,11 +1,20 @@
 import pandas as pd
+import numpy as np
 from config.settings import settings
 
 class StrategyFilter:
     """
     策略过滤器：结合大盘趋势调整买入标准
     """
-    def filter_signal(self, score: float, index_df: pd.DataFrame, code: str = "") -> tuple[bool, str]:
+    @staticmethod
+    def dynamic_threshold(scores) -> float | None:
+        if scores is None or len(scores) == 0:
+            return None
+        q = float(np.quantile(scores, settings.DYNAMIC_THRESHOLD_QUANTILE))
+        thr = max(settings.DYNAMIC_THRESHOLD_MIN, min(settings.DYNAMIC_THRESHOLD_MAX, q))
+        return round(thr, 2)
+
+    def filter_signal(self, score: float, index_df: pd.DataFrame, code: str = "", dynamic_threshold: float | None = None) -> tuple[bool, str]:
         """
         根据大盘状态过滤个股信号
         返回: (是否建议买入, 状态描述)
@@ -22,15 +31,14 @@ class StrategyFilter:
         market_status = "Bull Market" if is_bull_market else "Bear Market"
         
         if is_bull_market:
-            # 牛市：AI 进攻模式
-            # 对于高弹性/激进品种，进一步放宽标准
-            # 588000.SH (科创50), 159915.SZ (创业板)
-            # 512480.SH (半导体), 515030.SH (新能源车)
-            if code in settings.AGGRESSIVE_TICKERS:
-                threshold = 0.45
+            threshold = dynamic_threshold if dynamic_threshold is not None else settings.TICKER_BULL_THRESHOLDS.get(code)
+            if threshold is None:
+                if code in settings.AGGRESSIVE_TICKERS:
+                    threshold = 0.45
+                else:
+                    threshold = 0.6
+            if code in settings.AGGRESSIVE_TICKERS or code in settings.TICKER_BULL_THRESHOLDS:
                 market_status += " (Aggressive)"
-            else:
-                threshold = 0.6  # 普通标的维持 0.6 以求稳
                 
             is_buy = score >= threshold
         else:
