@@ -22,10 +22,15 @@ class FeatureEngineer:
     def _calc_with_pandas(df: pd.DataFrame) -> pd.DataFrame:
         close = df['close']
         
-        # 1. 均线 (MA)
+        # 1. 均线 (MA) & 乖离率 (Bias)
         df['ma5'] = close.rolling(window=5).mean()
         df['ma20'] = close.rolling(window=20).mean()
         df['ma60'] = close.rolling(window=60).mean()
+        
+        # 归一化: 乖离率 (Bias) = (Price - MA) / MA
+        df['bias_5'] = (close - df['ma5']) / df['ma5']
+        df['bias_20'] = (close - df['ma20']) / df['ma20']
+        df['bias_60'] = (close - df['ma60']) / df['ma60']
         
         # 2. RSI (Wilder's Smoothing)
         delta = close.diff()
@@ -59,25 +64,37 @@ class FeatureEngineer:
         tr3 = (low - prev_close).abs()
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         df['atr'] = tr.rolling(window=settings.ATR_PERIOD).mean()
-
-        # 4. OBV
-        # if close > prev_close: vol else -vol
-        # cumsum
-        obv_vol = np.where(close > prev_close, df['vol'], np.where(close < prev_close, -df['vol'], 0))
-        df['obv'] = obv_vol.cumsum()
         
-        # 5. MACD
+        # 归一化: 波动率占比
+        df['atr_pct'] = df['atr'] / close
+
+        # 4. Volume Ratio (量比)
+        # 替代 OBV (OBV 是累积值，非平稳)
+        df['vol_ma5'] = df['vol'].rolling(window=5).mean()
+        df['vol_ratio'] = df['vol'] / df['vol_ma5']
+        
+        # 5. MACD (Normalized)
         exp12 = close.ewm(span=12, adjust=False).mean()
         exp26 = close.ewm(span=26, adjust=False).mean()
         df['macd'] = exp12 - exp26
         df['macdsignal'] = df['macd'].ewm(span=9, adjust=False).mean()
         df['macdhist'] = df['macd'] - df['macdsignal']
         
-        # 6. BBANDS
+        # 归一化: 除以价格
+        df['macd_norm'] = df['macd'] / close
+        df['macdsignal_norm'] = df['macdsignal'] / close
+        df['macdhist_norm'] = df['macdhist'] / close
+        
+        # 6. BBANDS & Position
         df['middle'] = df['ma20']
         std = close.rolling(window=20).std()
         df['upper'] = df['middle'] + (std * 2)
         df['lower'] = df['middle'] - (std * 2)
+        
+        # 归一化: 布林带相对位置 (0=Lower, 1=Upper)
+        # 避免除以零
+        bb_range = df['upper'] - df['lower']
+        df['bb_pos'] = (close - df['lower']) / bb_range
         
         return df
 
