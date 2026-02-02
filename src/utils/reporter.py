@@ -37,16 +37,28 @@ class Reporter:
                 content.append(row + "\n")
             content.append("\n---\n")
 
-        content.append("## 🚀 重点关注 (Score >= 0.6)\n")
+        content.append("## 🚀 重点关注 (买入信号)\n")
         
-        high_score_found = False
+        buy_found = False
         for res in results:
-            if res['score'] >= 0.6:
-                high_score_found = True
+            if res['is_buy']:
+                buy_found = True
                 self._add_ticker_section(content, res)
         
-        if not high_score_found:
-            content.append("> ⚠️ 今日无高分标的，建议空仓或轻仓观望。\n")
+        if not buy_found:
+            content.append("> ⚠️ 今日无买入信号，建议空仓或轻仓观望。\n")
+        
+        content.append("\n---\n")
+        content.append("## ⚪ 高分但观望 (Score >= 0.6)\n")
+        
+        filtered_found = False
+        for res in results:
+            if res['score'] >= 0.6 and not res['is_buy']:
+                filtered_found = True
+                self._add_ticker_section(content, res)
+        
+        if not filtered_found:
+            content.append("> ⚪ 今日无高分但被过滤的标的。\n")
             
         content.append("\n---\n")
         content.append("## 📋 所有标的概览\n")
