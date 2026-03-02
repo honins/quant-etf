@@ -1,4 +1,5 @@
 
+import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -8,7 +9,51 @@ from src.data_loader.data_manager import DataManager
 from src.features.technical import FeatureEngineer
 from src.models.xgb_model import XGBoostModel
 
+def compute_for_codes(codes: list[str], threshold: float):
+    start_date = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
+    loader = TushareLoader()
+    data_manager = DataManager(loader)
+    feature_eng = FeatureEngineer()
+    model = XGBoostModel(model_path="data/xgb_model.json")
+    if not model.load_model():
+        print("❌ Model not found.")
+        return
+    for code in codes:
+        df = data_manager.update_and_get_data(code)
+        if df.empty:
+            print(f"{code} NO_DATA")
+            continue
+        df = feature_eng.calculate_technical_indicators(df)
+        df = df.dropna()
+        df = df[df['trade_date'].astype(str) >= start_date].copy()
+        if len(df) < 10:
+            print(f"{code} TOO_FEW_ROWS")
+            continue
+        probs = model.predict_batch(df)
+        df['score'] = probs
+        future_highs = []
+        for i in range(1, 6):
+            future_highs.append(df['high'].shift(-i))
+        future_max_high = pd.concat(future_highs, axis=1).max(axis=1)
+        df['max_return_5d'] = future_max_high / df['close'] - 1
+        df = df.dropna(subset=['max_return_5d'])
+        high_conf = df[df['score'] >= threshold]
+        if len(high_conf) == 0:
+            print(f"{code} {tickers.TICKERS.get(code, '')} | samples=0 | win_rate=N/A")
+            continue
+        hits = len(high_conf[high_conf['max_return_5d'] > 0.02])
+        win_rate = hits / len(high_conf)
+        avg_ret = high_conf['max_return_5d'].mean()
+        print(f"{code} {tickers.TICKERS.get(code, '')} | samples={len(high_conf)} | win_rate={win_rate:.3f} | avg_max_ret={avg_ret:.4f}")
+
 def main():
+    codes_env = os.getenv("TARGET_CODES", "").strip()
+    thr_env = os.getenv("TARGET_THRESHOLD", "").strip()
+    if codes_env:
+        codes = [c.strip() for c in codes_env.split(",") if c.strip()]
+        threshold = float(thr_env) if thr_env else 0.7
+        compute_for_codes(codes, threshold)
+        return
     print("🔍 Analyzing Signal Accuracy (Future 5D High > 2%)...")
     
     # 1. 准备数据
