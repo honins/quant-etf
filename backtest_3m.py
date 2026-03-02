@@ -40,13 +40,15 @@ def main():
     index_df = data_manager.update_and_get_data(index_code, is_index=True)
     index_df = feature_eng.calculate_technical_indicators(index_df)
     
-    # 将大盘状态映射到日期: {date: is_bull}
-    # 逻辑: close > ma60
+    # 将大盘状态映射到日期: {date: market_status}
     market_status_map = {}
-    for _, row in index_df.iterrows():
+    # 按日迭代，每天取 index_df 前 N 行设为当天可视完整的已知数据
+    for i in range(len(index_df)):
+        row = index_df.iloc[i]
         d = str(row['trade_date'])
-        is_bull = row['close'] > row['ma60'] if pd.notnull(row['ma60']) else True
-        market_status_map[d] = is_bull
+        # 使用优化后的双均线市场状态判断
+        current_status = strat_filter._detect_market_regime(index_df.iloc[:i+1])
+        market_status_map[d] = current_status
 
     # 4. 遍历标的进行回测
     results = []
@@ -59,8 +61,9 @@ def main():
             continue
             
         # 截取回测段 (需要多取一点数据用于计算指标)
-        # 先计算指标，再截取
+        # 先计算基础技术指标，再注入相对强弱特征，保持与训练/实盘一致
         df = feature_eng.calculate_technical_indicators(df)
+        df = feature_eng.add_relative_strength(df, index_df, period=20)
         df = df.dropna()
         
         # 截取最近3个月
@@ -72,35 +75,40 @@ def main():
         # 预测
         probs = model.predict_batch(test_df)
         
-        # 应用混合策略风控: 如果当天是大盘熊市，强制将买入概率置为 0
+        # 应用混合策略风控: 根据当天大盘状态调整买入概率
         adjusted_probs = []
         bear_days = 0
         for i, prob in enumerate(probs):
             trade_date = str(test_df.iloc[i]['trade_date'])
-            is_bull = market_status_map.get(trade_date, True) # 默认 True 避免漏数据
-            
-            if not is_bull:
-                # 熊市：仅允许极致高分抄底
-                if prob >= 0.80: # 从 0.75 提高到 0.80
+            # 使用新的三状态市场判断
+            current_status = market_status_map.get(trade_date, "Volatile Market")
+
+            if current_status == "Bear Market":
+                # 熊市：仅允许极致高分拄底
+                if prob >= 0.80:
                     adjusted_probs.append(prob)
                 else:
                     adjusted_probs.append(0.0)
                     bear_days += 1
+            elif current_status == "Volatile Market":
+                # 震荡市：中性偏保守阈值
+                if prob < 0.70:
+                    adjusted_probs.append(0.0)
+                else:
+                    adjusted_probs.append(prob)
             else:
                 # 牛市：针对不同标的设置不同阈值以提升胜率
                 aggressive_tickers = settings.AGGRESSIVE_TICKERS
                 if code in aggressive_tickers:
-                     # 激进标的：阈值 0.55 (原 0.45)
-                     if prob < 0.55:
-                         adjusted_probs.append(0.0)
-                     else:
-                         adjusted_probs.append(prob)
+                    if prob < 0.55:
+                        adjusted_probs.append(0.0)
+                    else:
+                        adjusted_probs.append(prob)
                 else:
-                     # 普通标的：阈值 0.65 (原 0.60)
-                     if prob < 0.65:
-                         adjusted_probs.append(0.0)
-                     else:
-                         adjusted_probs.append(prob)
+                    if prob < 0.65:
+                        adjusted_probs.append(0.0)
+                    else:
+                        adjusted_probs.append(prob)
                 
         adjusted_probs = np.array(adjusted_probs)
         

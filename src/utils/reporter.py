@@ -87,6 +87,12 @@ class Reporter:
             content.append(f"    - 初始止损: **{risk['initial_stop_loss']}** (现价 - 2ATR)\n")
             content.append(f"    - 移动止盈: **{risk['trailing_stop_loss']}** (22日高点 - 2ATR)\n")
             content.append(f"    - 波动率(ATR): {risk['atr']}\n")
+            # 【优化4】展示动态仓位建议
+            pos = res.get('position_size', {})
+            if pos:
+                content.append(f"- **⚖️ 仓位建议** (参考10万规模, 单笔风险≤2%):\n")
+                content.append(f"    - 建议份数: **{pos.get('suggested_shares', '-')}** 份\n")
+                content.append(f"    - 建议金额: **{pos.get('suggested_value', '-')}** 元 ({pos.get('suggested_weight_pct', '-')}%)\n")
         else:
             content.append(f"- **💡 决策建议**: 观望 (评分未达标或大势不佳)\n")
         content.append("\n")

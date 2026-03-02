@@ -54,7 +54,7 @@ class FeatureEngineer:
         rs_6 = avg_gain_6 / avg_loss_6
         df['rsi_6'] = 100 - (100 / (1 + rs_6))
 
-        # 3. ATR (简化版)
+        # 3. ATR — 使用 Wilder's RMA (标准定义)
         # TR = max(high-low, abs(high-prev_close), abs(low-prev_close))
         high = df['high']
         low = df['low']
@@ -63,7 +63,8 @@ class FeatureEngineer:
         tr2 = (high - prev_close).abs()
         tr3 = (low - prev_close).abs()
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        df['atr'] = tr.rolling(window=settings.ATR_PERIOD).mean()
+        # 修复：改用 RMA (Wilder's Smoothing) 而非 SMA
+        df['atr'] = calculate_rma(tr, settings.ATR_PERIOD)
         
         # 归一化: 波动率占比
         df['atr_pct'] = df['atr'] / close
@@ -92,19 +93,57 @@ class FeatureEngineer:
         df['lower'] = df['middle'] - (std * 2)
         
         # 归一化: 布林带相对位置 (0=Lower, 1=Upper)
-        # 避免除以零
-        bb_range = df['upper'] - df['lower']
+        # 修复: 防止除以零 (例如价格长期不变/停牌的ETF)
+        bb_range = (df['upper'] - df['lower']).replace(0, np.nan)
         df['bb_pos'] = (close - df['lower']) / bb_range
         
         return df
 
     @staticmethod
-    def add_labels(df: pd.DataFrame, horizon: int = 1, threshold: float = 0.01) -> pd.DataFrame:
+    def add_relative_strength(etf_df: pd.DataFrame, index_df: pd.DataFrame, period: int = 20) -> pd.DataFrame:
         """
-        添加训练标签: 未来 N 天是否上涨超过 M%
+        【优化2】 添加相对大盘强弱特征 (Cross-Sectional Features)
+        
+        通过将 ETF 自身的涨幅与基准指数对比，捕捉板块轮动的 Alpha。
+        - rs_{period}d: ETF N日涨幅 - 指数N日涨幅 (正值代表跑赢大盘)
+        - rel_vol: ETF ATR占比 / 指数ATR占比 (>1代表ETF波动比大盘更活跃)
+        
+        注意: 该方法需要在 calculate_technical_indicators 之后调用。
         """
-        # 未来 N 天收益率
-        df[f'ret_{horizon}d'] = df['close'].shift(-horizon) / df['close'] - 1
+        if etf_df.empty or index_df.empty:
+            return etf_df
+        
+        etf_df = etf_df.copy()
+        
+        # ETF N日涨幅
+        etf_ret = etf_df['close'].pct_change(period)
+        
+        # 指数 N日涨幅 (按日期对齐)
+        index_ret = index_df.set_index('trade_date')['close'].pct_change(period)
+        aligned_index_ret = etf_df['trade_date'].map(index_ret)
+        
+        # 相对强度 = ETF涨幅 - 指数涨幅
+        etf_df[f'rs_{period}d'] = etf_ret - aligned_index_ret
+        
+        # 相对波动率 = ETF ATR占比 / 指数ATR占比
+        if 'atr_pct' in etf_df.columns and 'atr_pct' in index_df.columns:
+            index_atr_pct = index_df.set_index('trade_date')['atr_pct']
+            aligned_index_atr_pct = etf_df['trade_date'].map(index_atr_pct)
+            etf_df['rel_vol'] = etf_df['atr_pct'] / aligned_index_atr_pct.replace(0, np.nan)
+        
+        return etf_df
+
+    @staticmethod
+    def add_labels(df: pd.DataFrame, horizon: int = 5, threshold: float = 0.02) -> pd.DataFrame:
+        """
+        添加训练标签: 未来 N 天 (收盘价) 最高涨幅是否超过 M%
+        
+        【优化1】 标签改造：改用未来N天内的最高收盘价，而非最高价(High)。
+        避免"偷价"：即仅靠日内瞬间刺穿阈值但无法真实成交的情形被错误标记为正样本。
+        """
+        # 使用未来 N 天内的最高收盘价（不使用 High，避免偷价）
+        future_max_close = df['close'].shift(-1).rolling(window=horizon, min_periods=1).max().shift(-(horizon - 1))
+        df[f'ret_{horizon}d'] = future_max_close / df['close'] - 1
         
         # 标签: 1 if return > threshold else 0
         df['target'] = (df[f'ret_{horizon}d'] > threshold).astype(int)

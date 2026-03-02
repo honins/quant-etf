@@ -50,4 +50,8 @@ class Settings:
     DYNAMIC_THRESHOLD_MIN = 0.55
     DYNAMIC_THRESHOLD_MAX = 0.75
 
+    # 大盘状态判定参数
+    # 【优化3】熊市确认：收盘价需持续在 MA60 下方多少个交易日才切换状态（抗锯齿）
+    MARKET_STATE_CONFIRM_DAYS = 3
+
 settings = Settings()

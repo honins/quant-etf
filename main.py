@@ -14,6 +14,44 @@ from src.utils.holdings_manager import HoldingsManager
 from src.utils.explainer import TechnicalExplainer
 from src.utils.feishu_bot import FeishuBot
 
+
+def _calc_position_size(risk_data: dict, total_capital: float = 100_000, risk_pct: float = 0.02) -> dict:
+    """
+    【优化4】 基于波动率倒数的动态仓位建议 (Volatility Targeting)
+
+    核心思路：每笔交易承担的最大风险 = 总资金 × risk_pct（默认2%）
+    建议股数 = (总资金 × 最大单笔风险) / 每股风险 (entry - stop_loss)
+    这确保了高波动ETF自动买少，低波动ETF自动买多，整体账户波动率趋于稳定。
+
+    Args:
+        risk_data: RiskManager.calculate_stops() 的返回值
+        total_capital: 账户总资金（默认10万元，仅用于计算比例）
+        risk_pct: 单笔愿意承担的最大亏损占总资金比例（默认2%）
+
+    Returns:
+        dict 包含建议股数和建议金额（以参考资金为基准的比例）
+    """
+    if not risk_data:
+        return {}
+
+    risk_per_share = risk_data.get('risk_per_share', 0)
+    current_price = risk_data.get('current_price', 0)
+
+    if risk_per_share <= 0 or current_price <= 0:
+        return {}
+
+    max_loss = total_capital * risk_pct
+    suggested_shares = int(max_loss / risk_per_share / 100) * 100  # 向下取整到100股
+    suggested_value = round(suggested_shares * current_price, 2)
+    suggested_weight = round(suggested_value / total_capital, 4)  # 占总资金比例
+
+    return {
+        "suggested_shares": suggested_shares,
+        "suggested_value": suggested_value,
+        "suggested_weight_pct": round(suggested_weight * 100, 2),
+    }
+
+
 def main():
     print("🚀 Starting Quant-ETF System...")
     
@@ -74,6 +112,7 @@ def main():
             return True
         return settings.USE_DYNAMIC_THRESHOLD
     
+    market_status = "Unknown"
     for code in ticker_list:
         name = tickers.TICKERS[code]
         print(f"Processing {name} ({code})...")
@@ -87,7 +126,10 @@ def main():
             
         # b. 特征工程
         df = feature_eng.calculate_technical_indicators(df)
-        df = model.prepare_data(df) # 补充模型需要的额外特征
+        df = model.prepare_data(df)  # 补充模型需要的额外特征
+        # 【优化2】注入相对大盘强弱特征（跨截面特征，只有指数数据有效时才计算）
+        if not index_df.empty:
+            df = feature_eng.add_relative_strength(df, index_df, period=20)
         
         if len(df) < 60:
             print(f"⚠️ Not enough data for {code} (need > 60 days)")
@@ -107,9 +149,12 @@ def main():
         is_buy, market_status = strat_filter.filter_signal(score, index_df, code=code, dynamic_threshold=dynamic_threshold)
         
         # e. 风控计算
-        risk_data = risk_manager.calculate_stops(df)
+        risk_data = risk_manager.calculate_stops(df, code=code)
         
-        # f. 技术面解释 (新增)
+        # f. 【优化4】计算动态建议仓位
+        position_size = _calc_position_size(risk_data)
+        
+        # g. 技术面解释
         explanations = TechnicalExplainer.explain(df)
         
         results.append({
@@ -119,7 +164,8 @@ def main():
             'is_buy': is_buy,
             'current_price': df.iloc[-1]['close'],
             'risk': risk_data,
-            'reasons': explanations # 传递解释列表
+            'reasons': explanations,
+            'position_size': position_size,  # 【优化4】仓位建议
         })
         
     # 3.5 检查现有持仓 (新增功能)
@@ -127,12 +173,7 @@ def main():
     
     # 4. 生成报告
     print("📝 Generating Report...")
-    # 获取最后计算的 market_status，如果没跑循环则默认 Unknown
-    m_status = "Unknown"
-    if 'market_status' in locals():
-        m_status = market_status
-        
-    report_path = reporter.generate_markdown(results, m_status, holdings_status)
+    report_path = reporter.generate_markdown(results, market_status, holdings_status)
     print("✅ Report Generated!")
     
     # 5. 发送飞书通知 (替代邮件)

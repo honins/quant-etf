@@ -25,7 +25,9 @@ class XGBoostModel(BaseModel):
             'atr_pct',                       # 相对波动率
             'vol_ratio',                     # 量比
             'macd_norm', 'macdsignal_norm', 'macdhist_norm', # 归一化MACD
-            'bb_pos'                         # 布林带位置
+            'bb_pos',                        # 布林带位置
+            'rs_20d',                        # 【优化2】相对大盘20日涨幅强弱
+            'rel_vol',                       # 【优化2】相对大盘波动率
         ]
         self.model_path = model_path
         self.model = None
@@ -94,7 +96,8 @@ class XGBoostModel(BaseModel):
         if df.empty:
             return 0.0
             
-        current_data = df.iloc[[-1]][self.feature_cols].fillna(0)
+        current_data = df.iloc[[-1]][self.feature_cols]
+        # XGBoost 原生支持 NaN，无需 fillna(0)（0 对乖离率等有具体语义）
         dtest = xgb.DMatrix(current_data, feature_names=self.feature_cols)
         
         prob = self.model.predict(dtest)[0]
@@ -107,7 +110,8 @@ class XGBoostModel(BaseModel):
         if not self.is_trained:
             return np.zeros(len(df))
             
-        data = df[self.feature_cols].fillna(0)
+        data = df[self.feature_cols]
+        # XGBoost 原生支持 NaN，无需 fillna(0)
         dtest = xgb.DMatrix(data, feature_names=self.feature_cols)
         return self.model.predict(dtest)
 
