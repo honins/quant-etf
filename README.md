@@ -57,6 +57,8 @@ pip install -r requirements.txt
 
 ```bash
 python main.py
+python dashboard.py
+python dashboard.py --serve
 python backtest_recent.py
 python backtest_3m.py
 python backtest_q4_2025.py

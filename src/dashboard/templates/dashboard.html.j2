@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>量化 ETF 看板</title>
+  <style>
+    :root {
+      --bg: #f4efe5;
+      --panel: #fffaf2;
+      --ink: #17313b;
+      --muted: #5f6d73;
+      --line: rgba(23, 49, 59, 0.14);
+      --bull: #1d8f6a;
+      --bear: #c45739;
+      --watch: #d18f26;
+      --accent: #264653;
+      --shadow: 0 18px 40px rgba(38, 70, 83, 0.12);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(38, 70, 83, 0.10), transparent 32%),
+        radial-gradient(circle at top right, rgba(209, 143, 38, 0.14), transparent 28%),
+        linear-gradient(180deg, #f6f0e6 0%, var(--bg) 100%);
+    }
+    .shell {
+      width: min(1540px, calc(100vw - 40px));
+      margin: 28px auto 40px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.85fr);
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .hero-main {
+      padding: 28px 30px;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(130deg, rgba(38, 70, 83, 0.98), rgba(31, 56, 66, 0.9));
+      color: #f8f4ed;
+    }
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      inset: auto -60px -90px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(209, 143, 38, 0.18);
+    }
+    .eyebrow {
+      letter-spacing: 0.08em;
+      font-size: 12px;
+      opacity: 0.74;
+    }
+    h1 {
+      margin: 10px 0 8px;
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+      font-size: clamp(30px, 3vw, 42px);
+      line-height: 1.08;
+      max-width: 720px;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      font-size: 13px;
+    }
+    .hero-side {
+      display: grid;
+      gap: 14px;
+      padding: 20px;
+      background: linear-gradient(180deg, rgba(255, 250, 242, 0.94), rgba(248, 241, 228, 0.98));
+    }
+    .mini-stat, .summary-card, .metric-cell, .signal-card, .holding-card, .chart-card {
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(23, 49, 59, 0.08);
+    }
+    .mini-stat { padding: 14px 16px; border-radius: 18px; }
+    .mini-label, .label, .key, .title {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .mini-value, .number, .value {
+      font-weight: 800;
+      line-height: 1;
+    }
+    .mini-value { font-size: 28px; }
+    .mini-sub, .sub, .muted, .score-sub, .ticker-meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .kpi {
+      padding: 18px;
+      min-height: 128px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .kpi:nth-child(odd) {
+      background: linear-gradient(180deg, rgba(255, 245, 230, 0.92), rgba(255, 250, 242, 0.96));
+    }
+    .kpi .value { font-size: 34px; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(360px, 420px);
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .stack { display: grid; gap: 18px; }
+    .section { padding: 22px 24px 24px; }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .section h2 {
+      margin: 0;
+      font-size: 20px;
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif;
+      line-height: 1.2;
+    }
+    .section-head .muted {
+      margin-left: auto;
+      max-width: 420px;
+      text-align: right;
+    }
+    .signal-list, .holding-list, .chart-wrap { display: grid; gap: 12px; }
+    .signal-card, .holding-card, .chart-card { padding: 16px; border-radius: 18px; }
+    .signal-card.buy { background: linear-gradient(180deg, rgba(29, 143, 106, 0.1), rgba(255,255,255,0.88)); }
+    .signal-card.watch { background: linear-gradient(180deg, rgba(209, 143, 38, 0.11), rgba(255,255,255,0.88)); }
+    .signal-card.observe { background: linear-gradient(180deg, rgba(38, 70, 83, 0.10), rgba(255,255,255,0.88)); }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .ticker-name { font-size: 18px; font-weight: 700; line-height: 1.2; }
+    .score {
+      font-family: Consolas, monospace;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+      text-align: right;
+      min-width: 108px;
+    }
+    .metric-row, .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .signal-card .metric-row,
+    .holding-card .metric-row,
+    #ticker-summary.metric-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+    .metric-cell, .summary-card { padding: 12px; border-radius: 16px; }
+    .metric-cell .val { font-size: 15px; font-weight: 700; }
+    .summary-card .number { font-size: 26px; }
+    .reason-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .chart-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    select {
+      appearance: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 16px;
+      background: rgba(255, 255, 255, 0.88);
+      font: inherit;
+      color: var(--ink);
+    }
+    .chart-svg { width: 100%; height: 280px; display: block; }
+    .dual-chart { width: 100%; height: 360px; display: block; }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 760px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(23, 49, 59, 0.08);
+      text-align: left;
+      font-size: 14px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: rgba(244, 239, 229, 0.98);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      z-index: 1;
+    }
+    tr:hover td { background: rgba(209, 143, 38, 0.06); }
+    .tone-bull { color: var(--bull); }
+    .tone-bear { color: var(--bear); }
+    .filter-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.76);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .filter-btn.active, .filter-btn:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    @media (max-width: 1280px) {
+      .hero, .layout, .compare-grid { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .section-head .muted { margin-left: 0; max-width: none; text-align: left; }
+    }
+    @media (max-width: 980px) {
+      .summary-grid,
+      .signal-card .metric-row,
+      .holding-card .metric-row,
+      #ticker-summary.metric-row {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width: 760px) {
+      .shell { width: min(100vw - 20px, 100%); margin: 12px auto 28px; }
+      .hero-main, .section, .hero-side { padding: 18px; }
+      .kpi-grid,
+      .summary-grid,
+      .signal-card .metric-row,
+      .holding-card .metric-row,
+      #ticker-summary.metric-row {
+        grid-template-columns: 1fr;
+      }
+      .score { text-align: left; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="panel hero-main">
+        <div class="eyebrow">量化 ETF / 本地面板</div>
+        <h1>把今日信号、回测结果和标的状态放到一个面板里。</h1>
+        <div class="muted">报告路径：{{ report_path }}</div>
+        <div class="hero-meta">
+          <div class="pill">市场：{{ market_status_label }}</div>
+          <div class="pill">模型：{{ model_name_label }}</div>
+          <div class="pill">生成时间：{{ generated_at }}</div>
+        </div>
+      </div>
+      <div class="panel hero-side">
+        <div class="mini-stat">
+          <div class="mini-label">今日最高评分</div>
+          <div class="mini-value">{{ "%.4f"|format(stats.top_live_score or 0) }}</div>
+          <div class="mini-sub">{{ stats.top_live_name or "-" }}</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-label">近90天最佳标的</div>
+          <div class="mini-value">{{ "%.2f%%"|format(stats.top_90_return_pct or 0) }}</div>
+          <div class="mini-sub">{{ stats.top_90_name or "-" }}</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-label">近180天最佳标的</div>
+          <div class="mini-value">{{ "%.2f%%"|format(stats.top_180_return_pct or 0) }}</div>
+          <div class="mini-sub">{{ stats.top_180_name or "-" }}</div>
+        </div>
+      </div>
+    </section>
+    <section class="kpi-grid">
+      <div class="panel kpi"><div class="label">活跃标的</div><div class="value">{{ stats.active_tickers }}</div><div class="sub">可交易 {{ stats.tradable_tickers }} / 观察 {{ stats.observe_tickers }}</div></div>
+      <div class="panel kpi"><div class="label">买入信号</div><div class="value">{{ stats.buy_count }}</div><div class="sub">观察名单 {{ stats.watch_count }}</div></div>
+      <div class="panel kpi"><div class="label">当前持仓</div><div class="value">{{ stats.holdings_count }}</div><div class="sub">来自 holdings.yml</div></div>
+      <div class="panel kpi"><div class="label">近90天收益</div><div class="value">{{ "%.2f%%"|format(backtests["90d"]["summary"]["avg_return_pct"] or 0) }}</div><div class="sub">胜率 {{ "%.2f%%"|format(backtests["90d"]["summary"]["overall_win_rate_pct"] or 0) }}</div></div>
+      <div class="panel kpi"><div class="label">近180天收益</div><div class="value">{{ "%.2f%%"|format(backtests["180d"]["summary"]["avg_return_pct"] or 0) }}</div><div class="sub">胜率 {{ "%.2f%%"|format(backtests["180d"]["summary"]["overall_win_rate_pct"] or 0) }}</div></div>
+      <div class="panel kpi"><div class="label">近90天交易数</div><div class="value">{{ backtests["90d"]["summary"]["total_trades"] }}</div><div class="sub">近180天交易数 {{ backtests["180d"]["summary"]["total_trades"] }}</div></div>
+    </section>
+    <section class="layout">
+      <div class="stack">
+        <div class="panel section">
+          <div class="section-head"><h2>实时信号队列</h2><div class="muted">当前模型输出的买入、观察和仅观察标的。</div></div>
+          <div class="signal-list">
+            {% for item in signals.buy %}
+            <article class="signal-card buy">
+              <div class="card-top">
+                <div><div class="ticker-name">{{ item.name }}</div><div class="ticker-meta">{{ item.code }} / {{ item.category_label }} / {{ item.mode_label }}</div></div>
+                <div><div class="score">{{ "%.4f"|format(item.score) }}</div><div class="score-sub">阈值 {{ "%.4f"|format(item.entry_threshold) }}</div></div>
+              </div>
+              <div class="metric-row">
+                <div class="metric-cell"><div class="key">现价</div><div class="val">{{ "%.4f"|format(item.current_price or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">初始止损</div><div class="val">{{ "%.4f"|format(item.risk.initial_stop_loss or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">近90天收益</div><div class="val tone-bull">{{ "%.2f%%"|format(item.return_90d or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">近90天交易</div><div class="val">{{ item.trades_90d or 0 }}</div></div>
+              </div>
+              <ul class="reason-list">{% for reason in item.reasons[:3] %}<li>{{ reason }}</li>{% endfor %}</ul>
+            </article>
+            {% endfor %}
+            {% if not signals.buy %}
+            <div class="signal-card buy"><div class="ticker-name">当前没有明确买入信号</div><div class="muted">这一轮运行没有产生可执行的买入机会。</div></div>
+            {% endif %}
+            {% for item in signals.watch[:4] %}
+            <article class="signal-card watch">
+              <div class="card-top">
+                <div><div class="ticker-name">{{ item.name }}</div><div class="ticker-meta">{{ item.code }} / {{ item.category_label }} / {{ item.mode_label }}</div></div>
+                <div><div class="score">{{ "%.4f"|format(item.score) }}</div><div class="score-sub">差值 {{ "%.4f"|format(item.threshold_gap) }}</div></div>
+              </div>
+              <div class="metric-row">
+                <div class="metric-cell"><div class="key">入场阈值</div><div class="val">{{ "%.4f"|format(item.entry_threshold) }}</div></div>
+                <div class="metric-cell"><div class="key">近90天收益</div><div class="val {% if (item.return_90d or 0) >= 0 %}tone-bull{% else %}tone-bear{% endif %}">{{ "%.2f%%"|format(item.return_90d or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">近180天收益</div><div class="val {% if (item.return_180d or 0) >= 0 %}tone-bull{% else %}tone-bear{% endif %}">{{ "%.2f%%"|format(item.return_180d or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">交易数</div><div class="val">{{ item.trades_90d or 0 }}</div></div>
+              </div>
+            </article>
+            {% endfor %}
+            {% for item in signals.observe[:2] %}
+            <article class="signal-card observe">
+              <div class="card-top">
+                <div><div class="ticker-name">{{ item.name }}</div><div class="ticker-meta">{{ item.code }} / 仅观察</div></div>
+                <div><div class="score">{{ "%.4f"|format(item.score) }}</div><div class="score-sub">{{ item.decision_note }}</div></div>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="panel section">
+          <div class="section-head"><h2>标的监控</h2><div class="muted">选择一个标的，查看价格走势和 AI 评分历史。</div></div>
+          <div class="chart-wrap">
+            <div class="chart-toolbar"><label for="ticker-select" class="muted">标的</label><select id="ticker-select"></select></div>
+            <div class="chart-card"><svg id="ticker-chart" class="dual-chart" viewBox="0 0 1000 360" preserveAspectRatio="none"></svg></div>
+            <div id="ticker-summary" class="metric-row"></div>
+          </div>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="panel section">
+          <div class="section-head"><h2>持仓止损面板</h2><div class="muted">展示当前持仓、止损位和浮动盈亏。</div></div>
+          <div class="holding-list">
+            {% for item in holdings %}
+            <article class="holding-card">
+              <div class="card-top">
+                <div><div class="ticker-name">{{ item.name }}</div><div class="ticker-meta">{{ item.code }} / 持有 {{ item.days_held }} 天</div></div>
+                <div><div class="score {% if (item.pnl_pct or 0) >= 0 %}tone-bull{% else %}tone-bear{% endif %}">{{ "%.2f%%"|format(item.pnl_pct or 0) }}</div><div class="score-sub">{{ item.status_label }}</div></div>
+              </div>
+              <div class="metric-row">
+                <div class="metric-cell"><div class="key">成本价</div><div class="val">{{ "%.4f"|format(item.buy_price or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">最新价</div><div class="val">{{ "%.4f"|format(item.current_price or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">移动止损</div><div class="val">{{ "%.4f"|format(item.trailing_stop or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">建议动作</div><div class="val">{{ item.action_label }}</div></div>
+              </div>
+            </article>
+            {% endfor %}
+            {% if not holdings %}
+            <div class="holding-card"><div class="ticker-name">当前没有持仓记录</div><div class="muted">在 config/holdings.yml 中配置后，这里会显示实时持仓监控。</div></div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="panel section"><div class="section-head"><h2>近90天收益分布</h2><div class="muted">当前近90天回测窗口里收益最高的标的。</div></div><div class="chart-card"><svg id="bar-chart-90" class="chart-svg" viewBox="0 0 1000 280" preserveAspectRatio="none"></svg></div></div>
+        <div class="panel section"><div class="section-head"><h2>近180天收益分布</h2><div class="muted">用更长窗口对比趋势延续性。</div></div><div class="chart-card"><svg id="bar-chart-180" class="chart-svg" viewBox="0 0 1000 280" preserveAspectRatio="none"></svg></div></div>
+      </div>
+    </section>
+    <section class="compare-grid">
+      {% for key, board in backtests.items() %}
+      <div class="panel section">
+        <div class="section-head"><h2>近{{ board.window_days }}天回测</h2><div class="muted">{{ board.start_date_label }} - {{ board.end_date_label }}</div></div>
+        <div class="summary-grid">
+          <div class="summary-card"><div class="title">平均收益</div><div class="number">{{ "%.2f%%"|format(board.summary.avg_return_pct or 0) }}</div></div>
+          <div class="summary-card"><div class="title">整体胜率</div><div class="number">{{ "%.2f%%"|format(board.summary.overall_win_rate_pct or 0) }}</div></div>
+          <div class="summary-card"><div class="title">交易数</div><div class="number">{{ board.summary.total_trades }}</div></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric-cell"><div class="key">平均回撤</div><div class="val">{{ "%.2f%%"|format(board.summary.avg_max_drawdown_pct or 0) }}</div></div>
+          <div class="metric-cell"><div class="key">平均波动</div><div class="val">{{ "%.2f%%"|format(board.summary.avg_volatility_pct or 0) }}</div></div>
+          <div class="metric-cell"><div class="key">正收益占比</div><div class="val">{{ "%.2f%%"|format(board.summary.positive_ratio_pct or 0) }}</div></div>
+          <div class="metric-cell"><div class="key">标的数</div><div class="val">{{ board.summary.ticker_count }}</div></div>
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+    <section class="panel section">
+      <div class="section-head"><h2>全量标的矩阵</h2><div class="muted">把实时评分、信号分组和近90天/180天回测结果放在一张表里。</div></div>
+      <div class="filter-row">
+        <button class="filter-btn active" data-filter="all">全部</button>
+        <button class="filter-btn" data-filter="buy">买入</button>
+        <button class="filter-btn" data-filter="watch">观察</button>
+        <button class="filter-btn" data-filter="core">核心</button>
+        <button class="filter-btn" data-filter="satellite">卫星</button>
+        <button class="filter-btn" data-filter="observe">观察池</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>代码</th><th>名称</th><th>分类</th><th>信号</th><th>模式</th><th>评分</th><th>阈值</th><th>现价</th><th>近90天收益</th><th>近90天胜率</th><th>近90天交易</th><th>近180天收益</th></tr>
+          </thead>
+          <tbody id="ticker-table-body">
+            {% for item in signals.all %}
+            <tr data-category="{{ item.category }}" data-signal="{{ item.signal_bucket }}">
+              <td>{{ item.code }}</td><td>{{ item.name }}</td><td>{{ item.category_label }}</td><td>{{ item.signal_bucket_label }}</td><td>{{ item.mode_label }}</td>
+              <td>{{ "%.4f"|format(item.score) }}</td><td>{{ "%.4f"|format(item.entry_threshold) }}</td><td>{{ "%.4f"|format(item.current_price or 0) }}</td>
+              <td class="{% if (item.return_90d or 0) >= 0 %}tone-bull{% else %}tone-bear{% endif %}">{{ "%.2f%%"|format(item.return_90d or 0) }}</td>
+              <td>{{ "%.2f%%"|format(item.win_rate_90d or 0) }}</td><td>{{ item.trades_90d or 0 }}</td>
+              <td class="{% if (item.return_180d or 0) >= 0 %}tone-bull{% else %}tone-bear{% endif %}">{{ "%.2f%%"|format(item.return_180d or 0) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <script>
+    const dashboardData = {{ payload_json | safe }};
+
+    function formatPct(value) {
+      if (value === null || value === undefined || Number.isNaN(value)) return "-";
+      return `${value.toFixed(2)}%`;
+    }
+
+    function formatFloat(value, digits = 4) {
+      if (value === null || value === undefined || Number.isNaN(value)) return "-";
+      return value.toFixed(digits);
+    }
+
+    function renderHorizontalBars(elementId, rows) {
+      const svg = document.getElementById(elementId);
+      const width = 1000;
+      const height = 280;
+      const margin = { top: 18, right: 24, bottom: 18, left: 210 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const count = Math.min(rows.length, 8);
+      const gap = 10;
+      const barHeight = (innerHeight - gap * (count - 1)) / Math.max(count, 1);
+      const values = rows.slice(0, count).map(row => row.total_return_pct || 0);
+      const maxAbs = Math.max(...values.map(value => Math.abs(value)), 1);
+      const zeroX = margin.left + innerWidth / 2;
+      const scale = (innerWidth / 2) / maxAbs;
+      const parts = [
+        `<line x1="${zeroX}" y1="${margin.top - 6}" x2="${zeroX}" y2="${height - margin.bottom + 6}" stroke="rgba(23,49,59,0.18)"></line>`
+      ];
+      rows.slice(0, count).forEach((row, index) => {
+        const y = margin.top + index * (barHeight + gap);
+        const value = row.total_return_pct || 0;
+        const barWidth = Math.abs(value) * scale;
+        const x = value >= 0 ? zeroX : zeroX - barWidth;
+        const color = value >= 0 ? "#1d8f6a" : "#c45739";
+        parts.push(
+          `<text x="${margin.left - 14}" y="${y + barHeight / 2 + 5}" text-anchor="end" font-size="12" fill="#5f6d73">${row.name}</text>`,
+          `<rect x="${x}" y="${y}" rx="10" ry="10" width="${barWidth}" height="${barHeight}" fill="${color}" opacity="0.84"></rect>`,
+          `<text x="${value >= 0 ? x + barWidth + 8 : x - 8}" y="${y + barHeight / 2 + 5}" text-anchor="${value >= 0 ? "start" : "end"}" font-size="12" fill="#17313b">${formatPct(value)}</text>`
+        );
+      });
+      svg.innerHTML = parts.join("");
+    }
+
+    function buildPath(points, xScale, yScale, offsetX, offsetY) {
+      return points.map((point, index) => `${index === 0 ? "M" : "L"} ${offsetX + xScale(index)} ${offsetY + yScale(point)}`).join(" ");
+    }
+
+    function renderTickerChart(code) {
+      const history = dashboardData.histories[code] || [];
+      const svg = document.getElementById("ticker-chart");
+      const summary = document.getElementById("ticker-summary");
+      if (!history.length) {
+        svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#5f6d73">暂无历史数据</text>`;
+        summary.innerHTML = "";
+        return;
+      }
+      const width = 1000;
+      const height = 360;
+      const priceTop = 18;
+      const priceHeight = 208;
+      const scoreTop = 256;
+      const scoreHeight = 78;
+      const left = 48;
+      const right = 22;
+      const innerWidth = width - left - right;
+      const closes = history.map(item => item.close || 0);
+      const scores = history.map(item => item.score || 0);
+      const priceMin = Math.min(...closes);
+      const priceMax = Math.max(...closes);
+      const scoreMax = Math.max(...scores, 1);
+      const xScale = index => (innerWidth * index) / Math.max(history.length - 1, 1);
+      const priceScale = value => priceHeight - ((value - priceMin) / Math.max(priceMax - priceMin, 1e-9)) * priceHeight;
+      const scoreScale = value => scoreHeight - (value / scoreMax) * scoreHeight;
+      const grid = [];
+      for (let i = 0; i < 4; i += 1) {
+        const y = priceTop + (priceHeight / 3) * i;
+        grid.push(`<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="rgba(23,49,59,0.08)"></line>`);
+      }
+      for (let i = 0; i < 3; i += 1) {
+        const y = scoreTop + (scoreHeight / 2) * i;
+        grid.push(`<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="rgba(23,49,59,0.08)"></line>`);
+      }
+      const last = history[history.length - 1];
+      svg.innerHTML = `
+        ${grid.join("")}
+        <text x="${left}" y="14" fill="#5f6d73" font-size="12">价格</text>
+        <text x="${left}" y="${scoreTop - 10}" fill="#5f6d73" font-size="12">AI评分</text>
+        <path d="${buildPath(closes, xScale, priceScale, left, priceTop)}" fill="none" stroke="#264653" stroke-width="3" stroke-linecap="round"></path>
+        <path d="${buildPath(scores, xScale, scoreScale, left, scoreTop)}" fill="none" stroke="#d18f26" stroke-width="3" stroke-linecap="round"></path>
+        <text x="${left}" y="${height - 8}" fill="#5f6d73" font-size="12">${history[0].date}</text>
+        <text x="${width - right}" y="${height - 8}" text-anchor="end" fill="#5f6d73" font-size="12">${last.date}</text>
+      `;
+      const signal = dashboardData.signals.all.find(item => item.code === code);
+      summary.innerHTML = signal ? `
+        <div class="metric-cell"><div class="key">最新评分</div><div class="val">${formatFloat(signal.score, 4)}</div></div>
+        <div class="metric-cell"><div class="key">入场阈值</div><div class="val">${formatFloat(signal.entry_threshold, 4)}</div></div>
+        <div class="metric-cell"><div class="key">近90天收益</div><div class="val ${((signal.return_90d || 0) >= 0) ? "tone-bull" : "tone-bear"}">${formatPct(signal.return_90d)}</div></div>
+        <div class="metric-cell"><div class="key">近180天收益</div><div class="val ${((signal.return_180d || 0) >= 0) ? "tone-bull" : "tone-bear"}">${formatPct(signal.return_180d)}</div></div>
+      ` : "";
+    }
+
+    function initTickerSelect() {
+      const select = document.getElementById("ticker-select");
+      select.innerHTML = dashboardData.signals.all.map(item => `<option value="${item.code}">${item.name} (${item.code})</option>`).join("");
+      const defaultTicker =
+        (dashboardData.signals.buy[0] && dashboardData.signals.buy[0].code) ||
+        (dashboardData.backtests["90d"].results[0] && dashboardData.backtests["90d"].results[0].code) ||
+        (dashboardData.signals.all[0] && dashboardData.signals.all[0].code);
+      if (defaultTicker) {
+        select.value = defaultTicker;
+        renderTickerChart(defaultTicker);
+      }
+      select.addEventListener("change", event => renderTickerChart(event.target.value));
+    }
+
+    function initFilters() {
+      const buttons = [...document.querySelectorAll(".filter-btn")];
+      const rows = [...document.querySelectorAll("#ticker-table-body tr")];
+      buttons.forEach(button => {
+        button.addEventListener("click", () => {
+          buttons.forEach(item => item.classList.remove("active"));
+          button.classList.add("active");
+          const filter = button.dataset.filter;
+          rows.forEach(row => {
+            const category = row.dataset.category;
+            const signal = row.dataset.signal;
+            const matches = filter === "all" || category === filter || signal === filter;
+            row.style.display = matches ? "" : "none";
+          });
+        });
+      });
+    }
+
+    renderHorizontalBars("bar-chart-90", dashboardData.backtests["90d"].results.slice(0, 8));
+    renderHorizontalBars("bar-chart-180", dashboardData.backtests["180d"].results.slice(0, 8));
+    initTickerSelect();
+    initFilters();
+  </script>
+</body>
+</html>

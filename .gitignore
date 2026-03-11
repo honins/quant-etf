@@ -21,6 +21,8 @@ env/
 # Generated reports
 reports/*.md
 reports/*.csv
+reports/*.html
+reports/*.png
 
 # OS generated files
 .DS_Store
