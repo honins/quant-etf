@@ -28,7 +28,7 @@ MIN_TRAIN_SAMPLES  = 200       # 训练数据最少样本数
 def load_all_data(data_manager: DataManager, feature_eng: FeatureEngineer, index_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """加载并处理所有标的的历史数据（含相对大盘强弱特征）"""
     dataset = {}
-    ticker_list = tickers.get_ticker_list()
+    ticker_list = tickers.get_tradable_ticker_list()
 
     for code in ticker_list:
         print(f"Loading {code}...", end="\r")

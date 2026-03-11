@@ -30,10 +30,11 @@ def main():
         print("❌ Model not found. Please train the model first.")
         return
 
-    print(f"📊 Analyzing {len(tickers.get_ticker_list())} ETFs...")
+    ticker_list = tickers.get_tradable_ticker_list()
+    print(f"📊 Analyzing {len(ticker_list)} tradable ETFs...")
     index_df, market_status_map = prepare_index_data(data_manager, feature_eng, strat_filter, index_code="000300.SH")
     data_cache = build_data_cache(
-        tickers.get_ticker_list(),
+        ticker_list,
         data_manager,
         feature_eng,
         index_df,

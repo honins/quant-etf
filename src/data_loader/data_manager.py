@@ -61,7 +61,9 @@ class DataManager:
                 new_df = self.provider.get_daily_data(ts_code, start_date, today)
             
             if not new_df.empty:
+                new_df = new_df.drop_duplicates(subset=["ts_code", "trade_date"], keep="last")
                 self._save_to_db(new_df, table_name)
+                self._dedupe_code_rows(ts_code, table_name)
                 print(f"[{ts_code}] Updated {len(new_df)} records.")
             else:
                 print(f"[{ts_code}] No new data found.")
@@ -77,6 +79,29 @@ class DataManager:
         finally:
             conn.close()
 
+    def _dedupe_code_rows(self, ts_code: str, table_name: str):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                DELETE FROM {table_name}
+                WHERE ts_code = ?
+                  AND rowid NOT IN (
+                      SELECT MAX(rowid)
+                      FROM {table_name}
+                      WHERE ts_code = ?
+                      GROUP BY trade_date
+                  )
+                """,
+                (ts_code, ts_code),
+            )
+            conn.commit()
+        except Exception as e:
+            print(f"Dedupe DB Error ({table_name}): {e}")
+        finally:
+            conn.close()
+
     def _read_from_db(self, ts_code: str, table_name: str) -> pd.DataFrame:
         conn = sqlite3.connect(self.db_path)
         try:
@@ -88,6 +113,8 @@ class DataManager:
 
             query = f"SELECT * FROM {table_name} WHERE ts_code='{ts_code}' ORDER BY trade_date ASC"
             df = pd.read_sql(query, conn)
+            if not df.empty:
+                df = df.drop_duplicates(subset=["trade_date"], keep="last").sort_values("trade_date").reset_index(drop=True)
             return df
         except Exception as e:
             print(f"Read DB Error ({table_name}): {e}")

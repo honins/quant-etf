@@ -66,10 +66,13 @@ def use_dynamic_for_code(
 ) -> bool:
     if threshold_overrides is not None:
         return False
-    if code in tickers.WIDE_INDEX_TICKERS:
+    category = tickers.get_ticker_category(code)
+    if category == "core":
         return False
-    if code in tickers.SECTOR_TICKERS:
+    if category == "satellite":
         return config.use_dynamic_threshold
+    if category == "observe":
+        return False
     return config.use_dynamic_threshold
 
 

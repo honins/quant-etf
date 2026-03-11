@@ -108,7 +108,7 @@ def main():
         return
 
     index_df, market_status_map = prepare_index_data(data_manager, feature_eng, strat_filter, index_code="000300.SH")
-    ticker_list = tickers.get_ticker_list()
+    ticker_list = tickers.get_tradable_ticker_list()
 
     end_date = datetime.now()
     start_90 = (end_date - timedelta(days=90)).strftime("%Y%m%d")

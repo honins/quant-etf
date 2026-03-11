@@ -51,7 +51,7 @@ class Reporter:
         
         filtered_found = False
         for res in results:
-            if res['score'] >= 0.6 and not res['is_buy']:
+            if res['score'] >= 0.6 and not res['is_buy'] and res.get('category') != 'observe':
                 filtered_found = True
                 self._add_ticker_section(content, res)
         
@@ -59,17 +59,29 @@ class Reporter:
             content.append("> ⚪ 今日无高分但被过滤的标的。\n")
             
         content.append("\n---\n")
+        content.append("## 👀 观察池 (Observe Only)\n")
+        observe_found = False
+        for res in results:
+            if res.get('category') == 'observe' and res['score'] >= 0.6:
+                observe_found = True
+                self._add_ticker_section(content, res)
+
+        if not observe_found:
+            content.append("> ⚪ 今日观察池无高分标的。\n")
+
+        content.append("\n---\n")
         content.append("## 📋 所有标的概览\n")
-        content.append("| 代码 | 名称 | 评分 | 建议 | 现价 | 止损位 | ATR |\n")
-        content.append("|---|---|---|---|---|---|---|\n")
+        content.append("| 代码 | 名称 | 分类 | 评分 | 建议 | 现价 | 止损位 | ATR |\n")
+        content.append("|---|---|---|---|---|---|---|---|\n")
         
         for res in results:
             action = "🟢 买入" if res['is_buy'] else "⚪ 观望"
             stop_loss = res['risk']['initial_stop_loss'] if res['risk'] else "-"
             atr = res['risk']['atr'] if res['risk'] else "-"
             price = res['current_price']
+            category_label = res.get('category_label', '-')
             
-            row = f"| {res['code']} | {res['name']} | **{res['score']}** | {action} | {price} | {stop_loss} | {atr} |"
+            row = f"| {res['code']} | {res['name']} | {category_label} | **{res['score']}** | {action} | {price} | {stop_loss} | {atr} |"
             content.append(row + "\n")
             
         with open(filename, 'w', encoding='utf-8') as f:
@@ -83,6 +95,7 @@ class Reporter:
         reasons = res.get('reasons', [])
         
         content.append(f"### {res['name']} ({res['code']})\n")
+        content.append(f"- **分类**: {res.get('category_label', '-')}\n")
         content.append(f"- **AI 评分**: {res['score']} / 1.0\n")
         content.append(f"- **当前价格**: {res['current_price']}\n")
         
@@ -104,5 +117,9 @@ class Reporter:
                 content.append(f"    - 建议份数: **{pos.get('suggested_shares', '-')}** 份\n")
                 content.append(f"    - 建议金额: **{pos.get('suggested_value', '-')}** 元 ({pos.get('suggested_weight_pct', '-')}%)\n")
         else:
-            content.append(f"- **💡 决策建议**: 观望 (评分未达标或大势不佳)\n")
+            decision_note = res.get('decision_note')
+            if decision_note:
+                content.append(f"- **💡 决策建议**: 观望 ({decision_note})\n")
+            else:
+                content.append(f"- **💡 决策建议**: 观望 (评分未达标或大势不佳)\n")
         content.append("\n")

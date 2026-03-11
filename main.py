@@ -101,18 +101,21 @@ def main():
     
     # 3. 遍历标的池
     results = []
-    ticker_list = tickers.get_ticker_list()
+    ticker_list = tickers.get_ticker_list(include_observe=True)
 
     def use_dynamic_for_code(code: str):
-        if code in tickers.WIDE_INDEX_TICKERS:
+        category = tickers.get_ticker_category(code)
+        if category == "core":
             return False
-        if code in tickers.SECTOR_TICKERS:
+        if category == "satellite":
             return True
         return settings.USE_DYNAMIC_THRESHOLD
     
     market_status = "Unknown"
     for code in ticker_list:
         name = tickers.TICKERS[code]
+        category = tickers.get_ticker_category(code)
+        category_label = tickers.get_ticker_category_label(code)
         print(f"Processing {name} ({code})...")
         
         # a. 获取数据 (自动增量更新)
@@ -145,6 +148,10 @@ def main():
         
         # d. 策略过滤
         is_buy, market_status = strat_filter.filter_signal(score, index_df, code=code, dynamic_threshold=dynamic_threshold)
+        decision_note = ""
+        if category == "observe":
+            is_buy = False
+            decision_note = "观察池标的，仅跟踪不进入默认实盘交易。"
         
         # e. 风控计算
         risk_data = risk_manager.calculate_stops(df, code=code)
@@ -158,11 +165,14 @@ def main():
         results.append({
             'code': code,
             'name': name,
+            'category': category,
+            'category_label': category_label,
             'score': score,
             'is_buy': is_buy,
             'current_price': df.iloc[-1]['close'],
             'risk': risk_data,
             'reasons': explanations,
+            'decision_note': decision_note,
             'position_size': position_size,  # 【优化4】仓位建议
         })
         

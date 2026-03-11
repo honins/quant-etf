@@ -93,8 +93,9 @@ def _print_results(results: list[dict], start_date_str: str, select_mode: bool):
             f"avg_vol={avg_vol * 100:.2f}% avg_sharpe={avg_sharpe:.2f} trades={group_trades}"
         )
 
-    summarize_group("Wide Index", tickers.WIDE_INDEX_TICKERS)
-    summarize_group("Sector", tickers.SECTOR_TICKERS)
+    summarize_group("Core", tickers.CORE_TRADE_TICKERS)
+    summarize_group("Satellite", tickers.SATELLITE_TRADE_TICKERS)
+    summarize_group("Observe", tickers.OBSERVE_TICKERS)
 
 
 def main():
@@ -152,7 +153,8 @@ def main():
 
     index_df, market_status_map = prepare_index_data(data_manager, feature_eng, strat_filter, index_code="000300.SH")
 
-    ticker_list = tickers.get_ticker_list()
+    include_observe = os.getenv("INCLUDE_OBSERVE", "").strip().lower() in ("1", "true", "yes", "y")
+    ticker_list = tickers.get_ticker_list(include_observe=include_observe)
     if grid_thresholds:
         ticker_list = [t.strip() for t in grid_tickers_env.split(",") if t.strip()]
 
