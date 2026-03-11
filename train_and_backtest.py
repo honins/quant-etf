@@ -41,7 +41,7 @@ def load_all_data(data_manager: DataManager, feature_eng: FeatureEngineer, index
         # 【优化2】注入横截面相对强弱特征（与 main.py 保持一致）
         if not index_df.empty:
             df = feature_eng.add_relative_strength(df, index_df, period=20)
-        df = feature_eng.add_labels(df, horizon=5, threshold=0.02)
+        df = feature_eng.add_labels(df)
         df = df.dropna()
         dataset[code] = df
 

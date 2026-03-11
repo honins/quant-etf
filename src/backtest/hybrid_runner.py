@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
 from config import tickers
 from config.settings import settings
 from src.backtest.backtester import Backtester
+from src.backtest.strategy_config import StrategyConfig
 from src.data_loader.data_manager import DataManager
 from src.features.technical import FeatureEngineer
 from src.models.xgb_model import XGBoostModel
@@ -60,14 +59,40 @@ def prepare_ticker_dataset(
     return {"test_df": test_df, "probs": probs}
 
 
-def use_dynamic_for_code(code: str, threshold_overrides: dict[str, float] | None) -> bool:
+def use_dynamic_for_code(
+    code: str,
+    threshold_overrides: dict[str, float] | None,
+    config: StrategyConfig,
+) -> bool:
     if threshold_overrides is not None:
         return False
     if code in tickers.WIDE_INDEX_TICKERS:
         return False
     if code in tickers.SECTOR_TICKERS:
-        return True
-    return settings.USE_DYNAMIC_THRESHOLD
+        return config.use_dynamic_threshold
+    return config.use_dynamic_threshold
+
+
+def _resolve_bull_threshold(
+    probs: np.ndarray,
+    i: int,
+    code: str,
+    use_dynamic: bool,
+    threshold_overrides: dict[str, float] | None,
+    config: StrategyConfig,
+) -> float:
+    threshold = None
+    if use_dynamic:
+        window_start = max(0, i - config.dynamic_threshold_lookback + 1)
+        threshold = float(np.quantile(probs[window_start : i + 1], config.dynamic_threshold_quantile))
+        threshold = max(config.dynamic_threshold_min, min(config.dynamic_threshold_max, threshold))
+    if threshold_overrides is not None:
+        threshold = threshold_overrides.get(code, threshold)
+    if threshold is None:
+        threshold = settings.TICKER_BULL_THRESHOLDS.get(code)
+    if threshold is None:
+        threshold = config.bull_aggressive_threshold if code in settings.AGGRESSIVE_TICKERS else config.bull_base_threshold
+    return round(float(threshold), 4)
 
 
 def build_adjusted_probs(
@@ -77,39 +102,41 @@ def build_adjusted_probs(
     code: str,
     use_dynamic: bool,
     threshold_overrides: dict[str, float] | None = None,
-) -> tuple[np.ndarray, int]:
-    adjusted_probs = []
+    config: StrategyConfig | None = None,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    config = config or StrategyConfig.from_settings()
+    entry_probs = []
+    exit_probs = []
     bear_days = 0
 
-    for i, prob in enumerate(probs):
+    for i, raw_prob in enumerate(probs):
         trade_date = str(test_df.iloc[i]["trade_date"])
         current_status = market_status_map.get(trade_date, "Volatile Market")
 
         if current_status == "Bear Market":
-            if prob >= 0.80:
-                adjusted_probs.append(prob)
-            else:
-                adjusted_probs.append(0.0)
+            threshold = config.bear_threshold
+            if raw_prob < threshold:
                 bear_days += 1
-            continue
-
-        if current_status == "Volatile Market":
-            threshold = 0.70
+        elif current_status == "Volatile Market":
+            threshold = config.volatile_threshold
         else:
-            threshold = None
-            if use_dynamic:
-                window_start = max(0, i - settings.DYNAMIC_THRESHOLD_LOOKBACK + 1)
-                threshold = StrategyFilter.dynamic_threshold(probs[window_start : i + 1])
-            if threshold_overrides is not None:
-                threshold = threshold_overrides.get(code, threshold)
-            if threshold is None:
-                threshold = settings.TICKER_BULL_THRESHOLDS.get(code)
-            if threshold is None:
-                threshold = 0.55 if code in settings.AGGRESSIVE_TICKERS else 0.65
+            threshold = _resolve_bull_threshold(
+                probs,
+                i,
+                code,
+                use_dynamic,
+                threshold_overrides,
+                config,
+            )
 
-        adjusted_probs.append(prob if prob >= threshold else 0.0)
+        entry_probs.append(raw_prob if raw_prob >= threshold else 0.0)
 
-    return np.array(adjusted_probs), bear_days
+        exit_prob = raw_prob
+        if current_status == "Bear Market" and raw_prob < config.bear_threshold:
+            exit_prob = 0.0
+        exit_probs.append(exit_prob)
+
+    return np.array(entry_probs), np.array(exit_probs), bear_days
 
 
 def run_backtest_for_cache(
@@ -117,22 +144,32 @@ def run_backtest_for_cache(
     backtester: Backtester,
     market_status_map: dict[str, str],
     threshold_overrides: dict[str, float] | None = None,
+    config: StrategyConfig | None = None,
 ) -> list[dict]:
+    config = config or StrategyConfig.from_settings()
     results = []
 
     for code, payload in data_cache.items():
         test_df = payload["test_df"]
         probs = payload["probs"]
-        use_dynamic = use_dynamic_for_code(code, threshold_overrides)
-        adjusted_probs, bear_days = build_adjusted_probs(
+        use_dynamic = use_dynamic_for_code(code, threshold_overrides, config)
+        entry_probs, exit_probs, bear_days = build_adjusted_probs(
             test_df,
             probs,
             market_status_map,
             code,
             use_dynamic,
             threshold_overrides,
+            config,
         )
-        result = backtester.run(test_df, adjusted_probs, threshold=0.0, code=code)
+        result = backtester.run(
+            test_df,
+            entry_probs,
+            threshold=0.0,
+            code=code,
+            exit_probs=exit_probs,
+            config=config,
+        )
         result["code"] = code
         result["name"] = tickers.TICKERS[code]
         result["bear_days"] = bear_days
@@ -146,12 +183,28 @@ def summarize_results(results: list[dict]) -> dict[str, float]:
     total_trades = sum(r["num_trades"] for r in results)
     winning_trades = sum(int(round(r["win_rate"] * r["num_trades"])) for r in results)
     avg_return = float(np.mean([r["total_return"] for r in results])) if results else 0.0
+    avg_max_drawdown = float(np.mean([r["max_drawdown"] for r in results])) if results else 0.0
+    avg_volatility = float(np.mean([r["volatility"] for r in results])) if results else 0.0
+    positive_ratio = float(np.mean([r["total_return"] > 0 for r in results])) if results else 0.0
     overall_win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
     return {
         "avg_return": avg_return,
+        "avg_max_drawdown": avg_max_drawdown,
+        "avg_volatility": avg_volatility,
+        "positive_ratio": positive_ratio,
         "overall_win_rate": overall_win_rate,
         "total_trades": total_trades,
     }
+
+
+def objective_score(summary: dict[str, float]) -> float:
+    return (
+        100.0 * summary["avg_return"]
+        - 35.0 * summary["avg_max_drawdown"]
+        - 12.0 * summary["avg_volatility"]
+        + 8.0 * summary["positive_ratio"]
+        + 5.0 * summary["overall_win_rate"]
+    )
 
 
 def build_data_cache(
