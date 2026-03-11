@@ -5,12 +5,7 @@ holdings:
       - date: "20260109"
         price: 2.02
         shares: 10000
-  - code: 159206.SZ
-    name: 卫星ETF
-    transactions:
-      - date: "20260123"
-        price: 1.99
-        shares: 10000
+
   - code: 588000.SH
     name: 科创50ETF
     transactions:
