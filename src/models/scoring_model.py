@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 class BaseModel(ABC):
     @abstractmethod

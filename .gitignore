@@ -12,10 +12,15 @@ env/
 # IDE settings
 .vscode/
 .idea/
+.trae/
 
 
 # Logs
 *.log
+
+# Generated reports
+reports/*.md
+reports/*.csv
 
 # OS generated files
 .DS_Store

@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 from config import tickers
 from src.data_loader.tushare_loader import TushareLoader

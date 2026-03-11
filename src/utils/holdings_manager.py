@@ -1,5 +1,4 @@
 import yaml
-import pandas as pd
 import os
 from datetime import datetime
 from src.strategy.logic import RiskManager

@@ -1,5 +1,3 @@
-import sys
-import pandas as pd
 from datetime import datetime
 from config import tickers
 from config.settings import settings

@@ -1,6 +1,4 @@
-import os
 from datetime import datetime
-from pathlib import Path
 from config.settings import settings
 
 class Reporter:

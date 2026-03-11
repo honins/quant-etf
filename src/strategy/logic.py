@@ -68,20 +68,20 @@ class StrategyFilter:
             threshold = dynamic_threshold if dynamic_threshold is not None else settings.TICKER_BULL_THRESHOLDS.get(code)
             if threshold is None:
                 if code in settings.AGGRESSIVE_TICKERS:
-                    threshold = 0.55
+                    threshold = settings.BULL_AGGRESSIVE_THRESHOLD
                 else:
-                    threshold = 0.65
+                    threshold = settings.BULL_BASE_THRESHOLD
             if code in settings.AGGRESSIVE_TICKERS or code in settings.TICKER_BULL_THRESHOLDS:
                 market_status += " (Aggressive)"
             is_buy = score >= threshold
 
         elif market_status == "Bear Market":
             # 熊市：极致防御模式，只有极高分才允许左侧抄底
-            is_buy = score >= 0.80
+            is_buy = score >= settings.BEAR_THRESHOLD
 
         else:
             # 震荡市：采用中性偏保守阈值
-            threshold = dynamic_threshold if dynamic_threshold is not None else 0.70
+            threshold = dynamic_threshold if dynamic_threshold is not None else settings.VOLATILE_THRESHOLD
             is_buy = score >= threshold
 
         return is_buy, market_status

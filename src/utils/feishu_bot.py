@@ -1,7 +1,5 @@
 import requests
-import json
 import os
-import re
 
 class FeishuBot:
     def __init__(self):

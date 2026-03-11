@@ -2,7 +2,6 @@ import tushare as ts
 import pandas as pd
 from src.core.interfaces import DataProvider
 from config.settings import settings
-import time
 
 class TushareLoader(DataProvider):
     def __init__(self):
