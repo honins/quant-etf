@@ -25,7 +25,7 @@ class Reporter:
         # 新增：持仓监控板块
         if holdings_status:
             content.append("## 🎒 持仓监控 (Holdings)\n")
-            content.append("| 代码 | 名称 | 持仓天数 | 成本价 | 现价 | 浮盈 | 移动止盈线 | 状态 |\n")
+            content.append("| 代码 | 名称 | 持仓天数 | 成本价 | 现价 | 浮盈 | 跟踪止损 | 状态 |\n")
             content.append("|---|---|---|---|---|---|---|---|\n")
             for h in holdings_status:
                 pnl_str = f"{h['pnl_pct']:.2f}%"
@@ -108,7 +108,7 @@ class Reporter:
             content.append(f"- **💡 决策建议**: **买入**\n")
             content.append(f"- **🛡️ 风控建议**:\n")
             content.append(f"    - 初始止损: **{risk['initial_stop_loss']}** (现价 - 2ATR)\n")
-            content.append(f"    - 移动止盈: **{risk['trailing_stop_loss']}** (22日高点 - 2ATR)\n")
+            content.append(f"    - 跟踪止损: **{risk['trailing_stop_loss']}** (22日高点 - 2ATR)\n")
             content.append(f"    - 波动率(ATR): {risk['atr']}\n")
             # 【优化4】展示动态仓位建议
             pos = res.get('position_size', {})

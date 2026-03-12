@@ -72,6 +72,12 @@
       line-height: 1.08;
       max-width: 720px;
     }
+    .hero-copy {
+      max-width: 720px;
+      color: rgba(248, 244, 237, 0.78);
+      line-height: 1.7;
+      font-size: 14px;
+    }
     .hero-meta {
       display: flex;
       flex-wrap: wrap;
@@ -87,6 +93,100 @@
       background: rgba(255, 255, 255, 0.14);
       border: 1px solid rgba(255, 255, 255, 0.16);
       font-size: 13px;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-top: 18px;
+      position: relative;
+      z-index: 1;
+    }
+    .action-btn,
+    .secondary-link,
+    .report-link {
+      transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+    }
+    .action-btn {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.14);
+      color: #f8f4ed;
+      border-radius: 999px;
+      padding: 11px 18px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .action-btn:hover:not(:disabled),
+    .secondary-link:hover,
+    .report-link:hover {
+      transform: translateY(-1px);
+    }
+    .action-btn:disabled {
+      cursor: wait;
+      opacity: 0.72;
+    }
+    .secondary-link {
+      color: #f5d9a6;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(245, 217, 166, 0.34);
+      padding: 8px 0;
+    }
+    .status-card {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(23, 49, 59, 0.08);
+    }
+    .status-title {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .status-log {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .recent-report-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .report-link {
+      display: block;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(23, 49, 59, 0.08);
+      background: rgba(255, 255, 255, 0.76);
+      text-decoration: none;
+      color: var(--ink);
+    }
+    .report-link-name {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .report-link-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .report-empty {
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px dashed rgba(23, 49, 59, 0.18);
+      color: var(--muted);
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.6);
     }
     .hero-side {
       display: grid;
@@ -119,6 +219,26 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
       margin-bottom: 18px;
+    }
+    .ops-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .ops-panel {
+      padding: 22px 24px 24px;
+    }
+    .ops-copy {
+      margin-bottom: 14px;
+      line-height: 1.65;
+    }
+    .ops-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+      margin-bottom: 16px;
     }
     .kpi {
       padding: 18px;
@@ -255,6 +375,7 @@
     tr:hover td { background: rgba(209, 143, 38, 0.06); }
     .tone-bull { color: var(--bull); }
     .tone-bear { color: var(--bear); }
+    .tone-watch { color: var(--watch); }
     .filter-row {
       display: flex;
       gap: 8px;
@@ -275,7 +396,7 @@
       border-color: var(--accent);
     }
     @media (max-width: 1280px) {
-      .hero, .layout, .compare-grid { grid-template-columns: 1fr; }
+      .hero, .ops-grid, .layout, .compare-grid { grid-template-columns: 1fr; }
       .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .section-head .muted { margin-left: 0; max-width: none; text-align: left; }
     }
@@ -332,6 +453,57 @@
         </div>
       </div>
     </section>
+    <section class="ops-grid">
+      <div class="panel ops-panel">
+        <div class="section-head">
+          <h2>工作台操作</h2>
+          <div class="muted">把生成日报、飞书推送和工作台刷新都放到页面里完成。</div>
+        </div>
+        <div class="ops-copy muted">刷新会重算实时信号、持仓状态和 90/180 天回测。生成日报不会自动打开 Markdown 文件，只会更新页面里的快捷入口。</div>
+        <div class="control-row">
+          <div>
+            <div class="label">图表窗口</div>
+            <div class="muted">会用于标的走势和本次刷新。</div>
+          </div>
+          <select id="history-days-select">
+            <option value="60">60 天</option>
+            <option value="90">90 天</option>
+            <option value="120">120 天</option>
+            <option value="180">180 天</option>
+            <option value="240">240 天</option>
+          </select>
+        </div>
+        <div class="ops-actions">
+          <button id="generate-report-btn" class="action-btn" type="button" data-action-button>生成今日日报</button>
+          <button id="generate-report-feishu-btn" class="action-btn" type="button" data-action-button>生成并推送飞书</button>
+          <button id="refresh-dashboard-btn" class="action-btn" type="button" data-action-button>刷新工作台</button>
+          <a id="open-report-link" class="secondary-link" href="{{ report_url }}" target="_blank" rel="noopener">打开今日日报</a>
+        </div>
+        <div class="status-card">
+          <div class="status-title">操作状态</div>
+          <div id="action-status" class="muted">可直接生成日报和刷新工作台。{% if not controls.feishu_configured %}飞书 webhook 未配置，推送按钮会自动跳过发送。{% endif %}</div>
+          <div id="action-log" class="status-log">上次工作台生成时间: {{ generated_at }}</div>
+        </div>
+      </div>
+      <div class="panel ops-panel">
+        <div class="section-head">
+          <h2>最近产物</h2>
+          <div class="muted">刚生成的日报会出现在这里。</div>
+        </div>
+        <div id="recent-report-list" class="recent-report-list">
+          {% if recent_reports %}
+            {% for item in recent_reports %}
+            <a class="report-link" href="{{ item.url }}" target="_blank" rel="noopener">
+              <div class="report-link-name">{{ item.name }}</div>
+              <div class="report-link-meta">{{ item.updated_at }} / {{ item.size_kb }} KB</div>
+            </a>
+            {% endfor %}
+          {% else %}
+            <div class="report-empty">当前还没有日报文件，先生成一份。</div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
     <section class="kpi-grid">
       <div class="panel kpi"><div class="label">活跃标的</div><div class="value">{{ stats.active_tickers }}</div><div class="sub">可交易 {{ stats.tradable_tickers }} / 观察 {{ stats.observe_tickers }}</div></div>
       <div class="panel kpi"><div class="label">买入信号</div><div class="value">{{ stats.buy_count }}</div><div class="sub">观察名单 {{ stats.watch_count }}</div></div>
@@ -354,6 +526,7 @@
               <div class="metric-row">
                 <div class="metric-cell"><div class="key">现价</div><div class="val">{{ "%.4f"|format(item.current_price or 0) }}</div></div>
                 <div class="metric-cell"><div class="key">初始止损</div><div class="val">{{ "%.4f"|format(item.risk.initial_stop_loss or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">跟踪止损</div><div class="val">{{ "%.4f"|format(item.risk.trailing_stop_loss or 0) }}</div></div>
                 <div class="metric-cell"><div class="key">近90天收益</div><div class="val tone-bull">{{ "%.2f%%"|format(item.return_90d or 0) }}</div></div>
                 <div class="metric-cell"><div class="key">近90天交易</div><div class="val">{{ item.trades_90d or 0 }}</div></div>
               </div>
@@ -409,7 +582,7 @@
               <div class="metric-row">
                 <div class="metric-cell"><div class="key">成本价</div><div class="val">{{ "%.4f"|format(item.buy_price or 0) }}</div></div>
                 <div class="metric-cell"><div class="key">最新价</div><div class="val">{{ "%.4f"|format(item.current_price or 0) }}</div></div>
-                <div class="metric-cell"><div class="key">移动止损</div><div class="val">{{ "%.4f"|format(item.trailing_stop or 0) }}</div></div>
+                <div class="metric-cell"><div class="key">跟踪止损</div><div class="val">{{ "%.4f"|format(item.trailing_stop or 0) }}</div></div>
                 <div class="metric-cell"><div class="key">建议动作</div><div class="val">{{ item.action_label }}</div></div>
               </div>
             </article>
@@ -484,10 +657,128 @@
       return value.toFixed(digits);
     }
 
+    function setActionStatus(message, tone = "") {
+      const status = document.getElementById("action-status");
+      if (!status) return;
+      status.textContent = message;
+      status.classList.remove("tone-bull", "tone-bear", "tone-watch");
+      if (tone) {
+        status.classList.add(tone);
+      }
+    }
+
+    function setActionLog(message) {
+      const log = document.getElementById("action-log");
+      if (log) {
+        log.textContent = message;
+      }
+    }
+
+    function renderRecentReports(reports) {
+      const container = document.getElementById("recent-report-list");
+      if (!container) return;
+      if (!Array.isArray(reports) || reports.length === 0) {
+        container.innerHTML = '<div class="report-empty">当前还没有日报文件，先生成一份。</div>';
+        return;
+      }
+      container.innerHTML = reports.map((item) => `
+        <a class="report-link" href="${item.url}" target="_blank" rel="noopener">
+          <div class="report-link-name">${item.name}</div>
+          <div class="report-link-meta">${item.updated_at} / ${item.size_kb} KB</div>
+        </a>
+      `).join("");
+    }
+
+    function setActionButtonsDisabled(disabled) {
+      document.querySelectorAll("[data-action-button]").forEach((button) => {
+        button.disabled = disabled;
+      });
+    }
+
+    async function runDashboardAction(endpoint, payload, pendingMessage) {
+      setActionButtonsDisabled(true);
+      setActionStatus(pendingMessage, "tone-watch");
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || `Request failed (${response.status})`);
+        }
+
+        if (result.report_url) {
+          const reportLink = document.getElementById("open-report-link");
+          reportLink.href = result.report_url;
+          if (result.report_path) {
+            reportLink.textContent = "打开今日日报";
+          }
+        }
+        if (result.recent_reports) {
+          renderRecentReports(result.recent_reports);
+        }
+
+        const tone = result.notification_status === "failed" ? "tone-bear" : "tone-bull";
+        setActionStatus(result.message, tone);
+        setActionLog(`最近一次操作: ${result.generated_at || result.dashboard_generated_at || new Date().toLocaleString()}`);
+        window.setTimeout(() => window.location.reload(), 900);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        setActionStatus(`操作失败: ${message}`, "tone-bear");
+        setActionLog(`最近一次操作失败: ${new Date().toLocaleString()}`);
+      } finally {
+        setActionButtonsDisabled(false);
+      }
+    }
+
+    function initWorkbenchActions() {
+      const historySelect = document.getElementById("history-days-select");
+      if (!historySelect) return;
+      historySelect.value = String(dashboardData.controls.history_days || 120);
+
+      document.getElementById("generate-report-btn").addEventListener("click", () => {
+        runDashboardAction(
+          "/api/generate-report",
+          {
+            history_days: Number(historySelect.value || 120),
+            send_notification: false,
+          },
+          "正在生成今日日报..."
+        );
+      });
+
+      document.getElementById("generate-report-feishu-btn").addEventListener("click", () => {
+        runDashboardAction(
+          "/api/generate-report",
+          {
+            history_days: Number(historySelect.value || 120),
+            send_notification: true,
+          },
+          "正在生成日报并尝试推送飞书..."
+        );
+      });
+
+      document.getElementById("refresh-dashboard-btn").addEventListener("click", () => {
+        runDashboardAction(
+          "/api/refresh-dashboard",
+          {
+            history_days: Number(historySelect.value || 120),
+          },
+          "正在刷新工作台数据和回测结果..."
+        );
+      });
+    }
+
     function renderHorizontalBars(elementId, rows) {
       const svg = document.getElementById(elementId);
       const width = 1000;
       const height = 280;
+      if (!rows.length) {
+        svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#5f6d73">暂无回测结果</text>';
+        return;
+      }
       const margin = { top: 18, right: 24, bottom: 18, left: 210 };
       const innerWidth = width - margin.left - margin.right;
       const innerHeight = height - margin.top - margin.bottom;
@@ -569,6 +860,8 @@
       summary.innerHTML = signal ? `
         <div class="metric-cell"><div class="key">最新评分</div><div class="val">${formatFloat(signal.score, 4)}</div></div>
         <div class="metric-cell"><div class="key">入场阈值</div><div class="val">${formatFloat(signal.entry_threshold, 4)}</div></div>
+        <div class="metric-cell"><div class="key">初始止损</div><div class="val">${formatFloat(signal.risk && signal.risk.initial_stop_loss, 4)}</div></div>
+        <div class="metric-cell"><div class="key">跟踪止损</div><div class="val">${formatFloat(signal.risk && signal.risk.trailing_stop_loss, 4)}</div></div>
         <div class="metric-cell"><div class="key">近90天收益</div><div class="val ${((signal.return_90d || 0) >= 0) ? "tone-bull" : "tone-bear"}">${formatPct(signal.return_90d)}</div></div>
         <div class="metric-cell"><div class="key">近180天收益</div><div class="val ${((signal.return_180d || 0) >= 0) ? "tone-bull" : "tone-bear"}">${formatPct(signal.return_180d)}</div></div>
       ` : "";
@@ -606,8 +899,10 @@
       });
     }
 
+    renderRecentReports(dashboardData.recent_reports);
     renderHorizontalBars("bar-chart-90", dashboardData.backtests["90d"].results.slice(0, 8));
     renderHorizontalBars("bar-chart-180", dashboardData.backtests["180d"].results.slice(0, 8));
+    initWorkbenchActions();
     initTickerSelect();
     initFilters();
   </script>

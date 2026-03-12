@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 
@@ -21,6 +22,7 @@ from src.models.scoring_model import RuleBasedModel
 from src.models.xgb_model import XGBoostModel
 from src.strategy.logic import RiskManager, StrategyFilter
 from src.utils.explainer import TechnicalExplainer
+from src.utils.feishu_bot import FeishuBot
 from src.utils.holdings_manager import HoldingsManager
 
 
@@ -45,6 +47,54 @@ def _pct(value: float | None, digits: int = 2) -> float | None:
 def _report_path_for_today() -> str:
     today = datetime.now().strftime("%Y-%m-%d")
     return str(settings.REPORTS_DIR / f"daily_report_{today}.md")
+
+
+def _report_url_for_today() -> str:
+    return Path(_report_path_for_today()).name
+
+
+def _recent_reports(limit: int = 6) -> list[dict]:
+    reports = sorted(
+        settings.REPORTS_DIR.glob("daily_report_*.md"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    items: list[dict] = []
+    for report_path in reports[:limit]:
+        stat = report_path.stat()
+        items.append(
+            {
+                "name": report_path.name,
+                "url": report_path.name,
+                "updated_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                "size_kb": round(stat.st_size / 1024.0, 1),
+            }
+        )
+    return items
+
+
+def _calc_position_size(
+    risk_data: dict,
+    total_capital: float = 100_000,
+    risk_pct: float = 0.02,
+) -> dict:
+    if not risk_data:
+        return {}
+
+    risk_per_share = risk_data.get("risk_per_share", 0)
+    current_price = risk_data.get("current_price", 0)
+    if risk_per_share <= 0 or current_price <= 0:
+        return {}
+
+    max_loss = total_capital * risk_pct
+    suggested_shares = int(max_loss / risk_per_share / 100) * 100
+    suggested_value = round(suggested_shares * current_price, 2)
+    suggested_weight = round(suggested_value / total_capital, 4)
+    return {
+        "suggested_shares": suggested_shares,
+        "suggested_value": suggested_value,
+        "suggested_weight_pct": round(suggested_weight * 100, 2),
+    }
 
 
 MARKET_STATUS_LABELS = {
@@ -224,6 +274,7 @@ def build_live_snapshot(
         market_status = filtered_market_status.split(" (", 1)[0]
         risk_data = risk_manager.calculate_stops(feature_df, code=code)
         explanations = TechnicalExplainer.explain(feature_df)
+        position_size = _calc_position_size(risk_data)
         category = tickers.get_ticker_category(code)
         decision_note = ""
         if category == "observe":
@@ -260,6 +311,7 @@ def build_live_snapshot(
             },
             "reasons": explanations or [],
             "decision_note": decision_note,
+            "position_size": position_size,
             "signal_bucket": "",
             "return_90d": None,
             "win_rate_90d": None,
@@ -301,6 +353,7 @@ def build_live_snapshot(
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "report_path": _report_path_for_today(),
+        "report_url": _report_url_for_today(),
         "market_status": market_status,
         "market_status_label": _market_status_label(market_status),
         "model_name": model_name,
@@ -440,6 +493,12 @@ def build_dashboard_payload(history_days: int = 120) -> dict:
         "model_name": live_snapshot["model_name"],
         "model_name_label": live_snapshot["model_name_label"],
         "report_path": live_snapshot["report_path"],
+        "report_url": live_snapshot["report_url"],
+        "recent_reports": _recent_reports(),
+        "controls": {
+            "history_days": history_days,
+            "feishu_configured": bool(FeishuBot().webhook),
+        },
         "stats": {
             "active_tickers": len(live_snapshot["results"]),
             "tradable_tickers": len(tickers.get_tradable_ticker_list()),
