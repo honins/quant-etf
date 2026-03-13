@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta
 
 import numpy as np
+import pandas as pd
 
 from config import tickers
 from config.settings import settings
@@ -98,12 +99,110 @@ def _print_results(results: list[dict], start_date_str: str, select_mode: bool):
     summarize_group("Observe", tickers.OBSERVE_TICKERS)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "y", "on")
+
+
+def _parse_codes_env(name: str) -> set[str]:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return set()
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def _render_ascii_trade_chart(
+    code: str,
+    name: str,
+    test_df: pd.DataFrame,
+    trades: list[dict],
+    width: int = 100,
+    height: int = 16,
+):
+    if test_df.empty:
+        return
+
+    closes = test_df["close"].astype(float).to_numpy()
+    dates = test_df["trade_date"].astype(str).to_numpy()
+    n = len(closes)
+    if n < 2:
+        return
+
+    width = max(30, min(width, n))
+    sample_idx = np.linspace(0, n - 1, width).round().astype(int)
+    sampled_close = closes[sample_idx]
+
+    p_min = float(np.min(sampled_close))
+    p_max = float(np.max(sampled_close))
+    if np.isclose(p_max, p_min):
+        p_max = p_min + 1e-6
+
+    grid = [[" " for _ in range(width)] for _ in range(height)]
+
+    def y_of(price: float) -> int:
+        ratio = (price - p_min) / (p_max - p_min)
+        return height - 1 - int(round(ratio * (height - 1)))
+
+    for x in range(width):
+        y = y_of(float(sampled_close[x]))
+        grid[y][x] = "."
+
+    date_to_col = {}
+    for col, src_i in enumerate(sample_idx):
+        date_to_col[str(dates[src_i])] = col
+
+    for t in trades:
+        action = str(t.get("action", ""))
+        marker = "B" if action == "BUY" else "S" if action.startswith("SELL") else None
+        if marker is None:
+            continue
+        d = str(t.get("date", ""))
+        if d not in date_to_col:
+            continue
+        col = date_to_col[d]
+        y = y_of(float(sampled_close[col]))
+        grid[y][col] = marker
+
+    print("\n" + "-" * 80)
+    print(f"{code} {name} Price/Trades Chart")
+    print(f"Range: {dates[sample_idx[0]]} -> {dates[sample_idx[-1]]}  Price: {p_min:.3f} ~ {p_max:.3f}")
+    for row in grid:
+        print("".join(row))
+    print("Legend: . close  B buy  S sell")
+    print("-" * 80)
+
+
+def _print_trade_charts(
+    results: list[dict],
+    data_cache: dict[str, dict],
+    chart_codes: set[str] | None = None,
+):
+    chart_codes = chart_codes or set()
+    for res in results:
+        code = res.get("code", "")
+        if chart_codes and code not in chart_codes:
+            continue
+        payload = data_cache.get(code)
+        if payload is None:
+            continue
+        _render_ascii_trade_chart(
+            code=code,
+            name=res.get("name", code),
+            test_df=payload["test_df"],
+            trades=res.get("trades", []),
+        )
+
+
 def main():
     print("Running backtest for recent window...")
     grid_thresholds_env = os.getenv("GRID_THRESHOLDS", "").strip()
     grid_tickers_env = os.getenv("GRID_TICKERS", "588000.SH,515070.SH")
     select_mode = os.getenv("SELECT_MODE", "").strip().lower() in ("1", "true", "yes", "y")
     diff_mode = os.getenv("DIFF_MODE", "").strip().lower() in ("1", "true", "yes", "y")
+    show_chart = _env_flag("SHOW_CHART", default=False)
+    chart_codes = _parse_codes_env("CHART_CODES")
 
     grid_thresholds = []
     if grid_thresholds_env:
@@ -255,6 +354,8 @@ def main():
             results.append(res)
 
         _print_results(results, start_date_str, select_mode=True)
+        if show_chart:
+            _print_trade_charts(results, data_cache, chart_codes=chart_codes)
         return
 
     if diff_mode:
@@ -300,6 +401,8 @@ def main():
 
     results = run_with_overrides(override_thresholds)
     _print_results(results, start_date_str, select_mode=False)
+    if show_chart:
+        _print_trade_charts(results, data_cache, chart_codes=chart_codes)
 
 
 if __name__ == "__main__":
