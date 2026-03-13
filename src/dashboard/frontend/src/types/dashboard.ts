@@ -95,6 +95,30 @@ export type BacktestBoard = {
   end_date_label: string;
   summary: BacktestSummary;
   results: BacktestResult[];
+  charts: Record<string, BacktestChart>;
+};
+
+export type BacktestChartPoint = {
+  date: string;
+  close: number | null;
+  buy_price: number | null;
+  sell_price: number | null;
+};
+
+export type BacktestTradePoint = {
+  date: string;
+  price: number | null;
+  type: "buy" | "sell";
+  action: string;
+  pnl: number | null;
+};
+
+export type BacktestChart = {
+  window_days: number;
+  start_date: string;
+  end_date: string;
+  series: BacktestChartPoint[];
+  trades: BacktestTradePoint[];
 };
 
 export type DashboardPayload = {

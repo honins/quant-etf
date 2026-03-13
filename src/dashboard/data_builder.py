@@ -403,6 +403,75 @@ def _serialize_summary(summary: dict[str, float], ticker_count: int) -> dict[str
     }
 
 
+def _serialize_backtest_charts(
+    results: list[dict],
+    data_cache: dict[str, dict],
+    lookback_days: int,
+) -> dict[str, dict]:
+    charts: dict[str, dict] = {}
+    for item in results:
+        code = item["code"]
+        payload = data_cache.get(code)
+        if payload is None:
+            continue
+        test_df = payload.get("test_df")
+        if test_df is None or test_df.empty:
+            continue
+
+        buy_map: dict[str, float] = {}
+        sell_map: dict[str, float] = {}
+        trade_points: list[dict] = []
+
+        for trade in item.get("trades", []):
+            action = str(trade.get("action", ""))
+            date = str(trade.get("date", ""))
+            if not date:
+                continue
+            price = _float_or_none(trade.get("price"), 4)
+            trade_type = ""
+            if action == "BUY":
+                trade_type = "buy"
+                if price is not None:
+                    buy_map[date] = price
+            elif action.startswith("SELL"):
+                trade_type = "sell"
+                if price is not None:
+                    sell_map[date] = price
+            if not trade_type:
+                continue
+            trade_points.append(
+                {
+                    "date": date,
+                    "price": price,
+                    "type": trade_type,
+                    "action": action,
+                    "pnl": _float_or_none(trade.get("pnl"), 2),
+                }
+            )
+
+        series: list[dict] = []
+        for _, row in test_df.iterrows():
+            date = str(row["trade_date"])
+            series.append(
+                {
+                    "date": date,
+                    "close": _float_or_none(row.get("close"), 4),
+                    "buy_price": _float_or_none(buy_map.get(date), 4),
+                    "sell_price": _float_or_none(sell_map.get(date), 4),
+                }
+            )
+
+        charts[code] = {
+            "window_days": lookback_days,
+            "start_date": str(test_df.iloc[0]["trade_date"]),
+            "end_date": str(test_df.iloc[-1]["trade_date"]),
+            "series": series,
+            "trades": trade_points,
+        }
+
+    return charts
+
+
 def build_backtest_snapshot(
     datasets: dict[str, object],
     market_status_map: dict[str, str],
@@ -433,6 +502,7 @@ def build_backtest_snapshot(
         config=config,
     )
     serialized_results = _serialize_backtest_results(results)
+    serialized_charts = _serialize_backtest_charts(results, data_cache, lookback_days)
     summary = _serialize_summary(summarize_results(results), len(serialized_results))
     return {
         "window_days": lookback_days,
@@ -442,6 +512,7 @@ def build_backtest_snapshot(
         "end_date_label": _format_compact_date(end_date.strftime("%Y%m%d")),
         "summary": summary,
         "results": serialized_results,
+        "charts": serialized_charts,
     }
 
 
