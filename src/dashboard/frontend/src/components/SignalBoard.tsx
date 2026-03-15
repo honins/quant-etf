@@ -28,7 +28,11 @@ function SignalCard({
   onSelect: () => void;
 }) {
   return (
-    <button className={`signal-card signal-${tone} ${selected ? "signal-selected" : ""}`} onClick={onSelect}>
+    <button
+      type="button"
+      className={`signal-card signal-${tone} ${selected ? "signal-selected" : ""}`}
+      onClick={onSelect}
+    >
       <div className="signal-header">
         <div>
           <div className="signal-title">{item.name}</div>
@@ -38,39 +42,51 @@ function SignalCard({
         </div>
         <div className="signal-score">
           <div>{item.score.toFixed(4)}</div>
-          <span>{tone === "buy" ? `阈值 ${item.entry_threshold.toFixed(4)}` : item.signal_bucket_label}</span>
+          <span>
+            {tone === "buy"
+              ? `\u9608\u503c ${item.entry_threshold.toFixed(4)}`
+              : item.signal_bucket_label}
+          </span>
         </div>
       </div>
       <div className="signal-metrics">
         <div>
-          <span>现价</span>
+          <span>{"\u73b0\u4ef7"}</span>
           <strong>{fixed(item.current_price)}</strong>
         </div>
         <div>
-          <span>初始止损</span>
+          <span>{"\u521d\u59cb\u6b62\u635f"}</span>
           <strong>{fixed(item.risk.initial_stop_loss)}</strong>
         </div>
         <div>
-          <span>跟踪止损</span>
+          <span>{"\u8ddf\u8e2a\u6b62\u635f"}</span>
           <strong>{fixed(item.risk.trailing_stop_loss)}</strong>
         </div>
         <div>
-          <span>近90天收益</span>
+          <span>{"\u8fd190\u5929\u6536\u76ca"}</span>
           <strong>{pct(item.return_90d)}</strong>
         </div>
       </div>
       {item.reasons.length > 0 ? (
-        <ul className="reason-list">
-          {item.reasons.slice(0, 3).map((reason) => (
-            <li key={reason}>{reason}</li>
+        <div className="signal-reason-row">
+          {item.reasons.slice(0, 2).map((reason) => (
+            <span key={reason} className="signal-reason-chip" title={reason}>
+              {reason}
+            </span>
           ))}
-        </ul>
+        </div>
       ) : null}
     </button>
   );
 }
 
-export function SignalBoard({ buy, watch, observe, selectedCode, onSelectTicker }: SignalBoardProps) {
+export function SignalBoard({
+  buy,
+  watch,
+  observe,
+  selectedCode,
+  onSelectTicker,
+}: SignalBoardProps) {
   const merged = [
     ...buy.map((item) => ({ item, tone: "buy" as const })),
     ...watch.slice(0, 4).map((item) => ({ item, tone: "watch" as const })),
@@ -82,9 +98,11 @@ export function SignalBoard({ buy, watch, observe, selectedCode, onSelectTicker 
       <div className="section-head">
         <div>
           <div className="section-kicker">Signals</div>
-          <h2>实时信号队列</h2>
+          <h2>{"\u5b9e\u65f6\u4fe1\u53f7\u961f\u5217"}</h2>
         </div>
-        <div className="panel-note">点击卡片即可切换右侧的标的详情。</div>
+        <div className="panel-note">
+          {`\u5171 ${merged.length} \u5f20\u5361\u7247\uff0c\u70b9\u51fb\u53ef\u5207\u6362\u53f3\u4fa7\u8be6\u60c5`}
+        </div>
       </div>
       <div className="signal-list">
         {merged.length ? (
@@ -98,7 +116,9 @@ export function SignalBoard({ buy, watch, observe, selectedCode, onSelectTicker 
             />
           ))
         ) : (
-          <div className="empty-card">当前没有可展示的实时信号。</div>
+          <div className="empty-card">
+            {"\u5f53\u524d\u6ca1\u6709\u53ef\u5c55\u793a\u7684\u5b9e\u65f6\u4fe1\u53f7\u3002"}
+          </div>
         )}
       </div>
     </section>
