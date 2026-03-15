@@ -707,6 +707,175 @@ experiment_results
 
 4. 工作台输出从“单标的打分”升级为“组合级执行建议”
 
-## 13. 一句话建议
+## 13. 阶段验收：验证产物与判断标准
+
+这一节用于明确每个阶段结束时，必须交付什么验证产物，以及什么结果才算“通过”，什么情况必须回炉。
+
+### 阶段一：研究底座重构完成后的验收
+
+目标：
+
+- 先证明研究框架可靠
+- 先证明新标签和新特征没有引入未来信息泄露
+
+验证产物：
+
+- `reports/experiments/stage1_baseline/config.json`
+- `reports/experiments/stage1_baseline/metrics.json`
+- `reports/experiments/stage1_baseline/equity_curve.csv`
+- `reports/experiments/stage1_baseline/trades.csv`
+- `reports/experiments/stage1_baseline/feature_coverage.json`
+- `reports/experiments/stage1_baseline/validation_summary.md`
+- `reports/experiments/stage1_baseline/leakage_check.md`
+
+必须包含的内容：
+
+- baseline 策略在旧标签和新标签下的对比
+- anchored walk-forward 结果
+- rolling walk-forward 结果
+- bull / bear / volatile 三类 regime 分拆结果
+- 各 ETF 的分布结果，而不是只给全局平均值
+- 缺失值率、特征覆盖率、标签覆盖率
+
+通过标准：
+
+- 新研究框架能稳定复现实验，重复运行关键指标偏差不超过很小范围
+- 任意验证窗口都没有明显数据泄露迹象
+- 指标可以按窗口、按 ETF、按 regime 拆开看
+- baseline 策略在新框架下跑通，且结果与旧回测方向大体一致，不出现完全失真
+
+不通过标准：
+
+- 同一配置重复运行结果明显漂移
+- 不同窗口样本量、特征覆盖率、标签覆盖率不可解释
+- 结果只能给均值，无法追到窗口和 ETF 维度
+- 任何一个核心特征或标签被发现含未来信息
+
+阶段结论：
+
+- 这一阶段不要求收益显著提升
+- 只要求“研究底座可信”
+
+### 阶段二：Alpha 引擎升级完成后的验收
+
+目标：
+
+- 证明多模型、多周期、文本因子带来了真实预测增益
+- 不是把模型做复杂，而是要打赢当前 XGBoost baseline
+
+验证产物：
+
+- `reports/experiments/stage2_model_benchmark/model_comparison.csv`
+- `reports/experiments/stage2_model_benchmark/oos_metrics.csv`
+- `reports/experiments/stage2_model_benchmark/regime_breakdown.csv`
+- `reports/experiments/stage2_model_benchmark/feature_group_ablation.csv`
+- `reports/experiments/stage2_model_benchmark/text_factor_lift.csv`
+- `reports/experiments/stage2_model_benchmark/intraday_factor_lift.csv`
+- `reports/experiments/stage2_model_benchmark/champion_report.md`
+
+必须包含的内容：
+
+- XGBoost baseline、LightGBM、CatBoost、ranking model 的统一对比
+- 加分钟级特征前后的 uplift
+- 加文本因子前后的 uplift
+- 单模型与 ensemble 的对比
+- 各模型在不同 regime 下的稳定性
+- 最差窗口表现，而不只是最好窗口
+
+通过标准：
+
+- 至少有一条候选模型线在严格 OOS 下稳定优于 XGBoost baseline
+- 优势不能只体现在平均收益，还要体现在回撤、稳定性、或换手质量中的至少一项
+- 文本因子或分钟级因子中至少一类带来可重复的正向增益
+- 候选 champion 不能只依赖单一 ETF 或单一市场阶段
+
+建议量化门槛：
+
+- OOS 年化收益或组合收益提升达到“统计上可重复”的水平
+- OOS 最大回撤不明显恶化
+- 最差窗口表现不明显差于 baseline
+- 胜率、Calmar、DSR 至少两项优于 baseline
+
+不通过标准：
+
+- 只在少数窗口大幅胜出，其余窗口失效
+- 只在单一 ETF 或单一主题上有效
+- 加文本或分钟级特征后，整体换手和噪声显著放大
+- ensemble 只是把 in-sample 做得更漂亮，OOS 没有改善
+
+阶段结论：
+
+- 这一阶段通过后，才能确定新的 champion 模型族
+
+### 阶段三：组合与执行升级完成后的验收
+
+目标：
+
+- 证明系统已经从“打分器”升级成“可执行组合引擎”
+- 重点不再是单标的命中率，而是组合质量
+
+验证产物：
+
+- `reports/experiments/stage3_portfolio/portfolio_metrics.json`
+- `reports/experiments/stage3_portfolio/weights_history.csv`
+- `reports/experiments/stage3_portfolio/turnover_report.csv`
+- `reports/experiments/stage3_portfolio/cost_impact_analysis.csv`
+- `reports/experiments/stage3_portfolio/capacity_report.md`
+- `reports/experiments/stage3_portfolio/attribution_report.md`
+- `reports/experiments/stage3_portfolio/champion_vs_baseline.md`
+
+必须包含的内容：
+
+- top-k 组合结果与单标的阈值策略的对比
+- 成本前与成本后的收益对比
+- 换手、容量、集中度、相关性暴露
+- 收益归因：来自哪些 ETF、哪些 regime、哪些特征组
+- 执行层建议：仓位、持有期、减仓逻辑
+
+通过标准：
+
+- 组合级策略在成本后仍优于当前单标的 baseline
+- 最大回撤、换手、集中度都在可接受范围内
+- 组合收益不是由极少数极端交易贡献
+- 工作台和日报能输出组合建议、权重建议、风险提示
+
+建议量化门槛：
+
+- 成本后净收益仍显著高于当前 baseline
+- 最大回撤控制优于或不差于当前系统
+- 年化换手控制在策略目标范围内
+- 单一 ETF 权重、主题暴露、相关性暴露都满足预设约束
+
+不通过标准：
+
+- 成本一加就失效
+- 组合表现主要靠单次大行情或极少数 ETF 支撑
+- 权重波动过大、换手过高、容量过低
+- Dashboard 仍只能展示分数，不能展示可执行组合
+
+阶段结论：
+
+- 这一阶段通过后，才算真正完成从研究系统到交易工作台的升级
+
+### 最终上线前的总验收
+
+最终上线前必须再出一份总报告：
+
+- `reports/experiments/final_go_live/final_readiness.md`
+- `reports/experiments/final_go_live/champion_config.json`
+- `reports/experiments/final_go_live/oos_summary.csv`
+- `reports/experiments/final_go_live/risk_limits.json`
+
+总验收必须回答 5 个问题：
+
+1. 新 champion 是否在严格 OOS 上稳定打赢旧系统
+2. 成本、换手、容量、集中度是否都被纳入约束
+3. 文本因子和分钟级因子是否带来稳定增益，而不是噪声
+4. 组合输出是否能直接转成工作台和日报里的执行建议
+5. 如果未来 1 个月市场 regime 发生切换，系统是否仍有防守能力
+
+只有这 5 个问题都能回答“是”，才建议把新策略链路升级为主线。
+
+## 14. 一句话建议
 
 你的优势不是“可以训练一个更大的模型”，而是“可以把数值、文本、多周期、组合优化和严格验证一起做对”。真正能把策略效果拉开的，通常是这套系统工程，而不是单独某个模型名字。
