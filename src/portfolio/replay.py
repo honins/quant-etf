@@ -206,6 +206,147 @@ def build_defensive_portfolio_plan(results: list[dict[str, Any]]) -> dict[str, A
     return {"weights": {code: weight / capped_sum for code, weight in capped.items()}}
 
 
+def build_risk_adjusted_portfolio_plan(results: list[dict[str, Any]]) -> dict[str, Any]:
+    eligible = []
+    for row in results:
+        total_return = float(row.get("total_return", 0.0))
+        win_rate = float(row.get("win_rate", 0.0))
+        sharpe = float(row.get("sharpe", 0.0))
+        max_drawdown = float(row.get("max_drawdown", 0.0))
+        volatility = float(row.get("volatility", 0.0))
+        if total_return < 0.0:
+            continue
+        if win_rate < 0.45:
+            continue
+        if sharpe < 0.75:
+            continue
+        if max_drawdown > 0.12:
+            continue
+        if volatility > 0.28:
+            continue
+        eligible.append(dict(row))
+
+    if not eligible:
+        return {"weights": {}}
+
+    scored = []
+    for row in eligible:
+        total_return = float(row.get("total_return", 0.0))
+        win_rate = float(row.get("win_rate", 0.0))
+        sharpe = float(row.get("sharpe", 0.0))
+        max_drawdown = float(row.get("max_drawdown", 0.0))
+        volatility = float(row.get("volatility", 0.0))
+        score = 0.95 * total_return + 0.55 * win_rate + 0.25 * sharpe - 0.30 * max_drawdown - 0.18 * volatility
+        if score > 0:
+            scored.append((str(row.get("code", "")), score))
+
+    if not scored:
+        return {"weights": {}}
+
+    scored = sorted(scored, key=lambda item: item[1], reverse=True)[:4]
+    score_sum = sum(score for _, score in scored)
+    raw_weights = {code: score / score_sum for code, score in scored}
+    capped = {code: min(weight, 0.36) for code, weight in raw_weights.items()}
+    capped_sum = sum(capped.values())
+    return {"weights": {code: weight / capped_sum for code, weight in capped.items()}}
+
+
+def build_trained_model_selective_plan(results: list[dict[str, Any]]) -> dict[str, Any]:
+    eligible = []
+    for row in results:
+        total_return = float(row.get("total_return", 0.0))
+        win_rate = float(row.get("win_rate", 0.0))
+        sharpe = float(row.get("sharpe", 0.0))
+        max_drawdown = float(row.get("max_drawdown", 0.0))
+        volatility = float(row.get("volatility", 0.0))
+        num_trades = float(row.get("num_trades", 0.0))
+        if total_return < 0.005:
+            continue
+        if win_rate < 0.50:
+            continue
+        if sharpe < 0.8:
+            continue
+        if max_drawdown > 0.10:
+            continue
+        if volatility > 0.22:
+            continue
+        if num_trades < 2:
+            continue
+        eligible.append(dict(row))
+
+    if not eligible:
+        return {"weights": {}}
+
+    scored = []
+    for row in eligible:
+        total_return = float(row.get("total_return", 0.0))
+        win_rate = float(row.get("win_rate", 0.0))
+        sharpe = float(row.get("sharpe", 0.0))
+        max_drawdown = float(row.get("max_drawdown", 0.0))
+        volatility = float(row.get("volatility", 0.0))
+        score = 1.05 * total_return + 0.60 * win_rate + 0.20 * sharpe - 0.35 * max_drawdown - 0.20 * volatility
+        if score > 0:
+            scored.append((str(row.get("code", "")), score))
+
+    if not scored:
+        return {"weights": {}}
+
+    scored = sorted(scored, key=lambda item: item[1], reverse=True)[:3]
+    score_sum = sum(score for _, score in scored)
+    raw_weights = {code: score / score_sum for code, score in scored}
+    capped = {code: min(weight, 0.40) for code, weight in raw_weights.items()}
+    capped_sum = sum(capped.values())
+    return {"weights": {code: weight / capped_sum for code, weight in capped.items()}}
+
+
+def build_stable_winners_plan(results: list[dict[str, Any]]) -> dict[str, Any]:
+    eligible = []
+    for row in results:
+        total_return = float(row.get("total_return", 0.0))
+        win_rate = float(row.get("win_rate", 0.0))
+        sharpe = float(row.get("sharpe", 0.0))
+        max_drawdown = float(row.get("max_drawdown", 0.0))
+        volatility = float(row.get("volatility", 0.0))
+        num_trades = float(row.get("num_trades", 0.0))
+        if total_return < 0.01:
+            continue
+        if win_rate < 0.55:
+            continue
+        if sharpe < 1.0:
+            continue
+        if max_drawdown > 0.10:
+            continue
+        if volatility > 0.18:
+            continue
+        if num_trades < 3:
+            continue
+        eligible.append(dict(row))
+
+    if not eligible:
+        return {"weights": {}}
+
+    scored = []
+    for row in eligible:
+        total_return = float(row.get("total_return", 0.0))
+        win_rate = float(row.get("win_rate", 0.0))
+        sharpe = float(row.get("sharpe", 0.0))
+        max_drawdown = float(row.get("max_drawdown", 0.0))
+        volatility = float(row.get("volatility", 0.0))
+        score = 1.00 * total_return + 0.60 * win_rate + 0.25 * sharpe - 0.32 * max_drawdown - 0.20 * volatility
+        if score > 0:
+            scored.append((str(row.get("code", "")), score))
+
+    if not scored:
+        return {"weights": {}}
+
+    scored = sorted(scored, key=lambda item: item[1], reverse=True)[:3]
+    score_sum = sum(score for _, score in scored)
+    raw_weights = {code: score / score_sum for code, score in scored}
+    capped = {code: min(weight, 0.34) for code, weight in raw_weights.items()}
+    capped_sum = sum(capped.values())
+    return {"weights": {code: weight / capped_sum for code, weight in capped.items()}}
+
+
 def build_portfolio_variants(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     aggressive = build_weighted_portfolio_plan(results)
 
@@ -245,4 +386,7 @@ def build_portfolio_variants(results: list[dict[str, Any]]) -> dict[str, dict[st
         "quality": quality,
         "elite": elite,
         "defensive": build_defensive_portfolio_plan(results),
+        "risk_adjusted": build_risk_adjusted_portfolio_plan(results),
+        "trained_selective": build_trained_model_selective_plan(results),
+        "stable_winners": build_stable_winners_plan(results),
     }

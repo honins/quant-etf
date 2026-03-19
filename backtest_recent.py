@@ -124,7 +124,7 @@ def _build_portfolio_summary(data_cache: dict[str, dict], results: list[dict]) -
         roi = float(summary.get("total_return", 0.0))
         vol = float(summary.get("volatility", 0.0))
         max_drawdown = abs(float(report.get("max_drawdown", 0.0)))
-        score = roi - 0.30 * max_drawdown - 0.08 * vol
+        score = roi - 0.60 * max_drawdown - 0.16 * vol
         if best_score is None or score > best_score:
             best_score = score
             preferred_name = variant_name
@@ -494,7 +494,9 @@ def main():
     portfolio = _build_portfolio_summary(data_cache, results)
     replay = portfolio["replay"]
     report = portfolio["report"]
+    preferred_variant = portfolio.get("preferred_variant", "-")
     print(
+        f"Preferred Variant: {preferred_variant} | "
         f"Portfolio ROI: {replay['summary']['total_return'] * 100:.2f}% | "
         f"Portfolio MaxDD: {report['max_drawdown'] * 100:.2f}% | "
         f"Portfolio Vol: {replay['summary']['volatility'] * 100:.2f}% | "

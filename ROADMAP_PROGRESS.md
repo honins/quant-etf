@@ -1,6 +1,6 @@
 # Roadmap Progress Snapshot
 
-Last updated: 2026-03-19
+Last updated: 2026-03-19 (post-trained-model recovery)
 Branch: `feature/research-roadmap`
 
 ## Current Status
@@ -77,40 +77,45 @@ Recent backtest command:
 python backtest_recent.py
 ```
 
-Current local environment result is using `Rules` fallback because `xgboost` is unavailable.
+Current local environment now has a runnable trained-model path through `logistic`, while `xgboost` remains unavailable.
 
-### Single-ETF Aggregate View
+### Trained Logistic Recent Backtest
 
-- Average Return: `-0.37%`
-- Overall Win Rate: `16.32%`
-- Average Drawdown: `1.13%`
-- Trades: `26`
+- Average Return: `2.33%`
+- Overall Win Rate: `27.24%`
+- Average Drawdown: `3.02%`
+- Trades: `53`
 
-This view is no longer considered the primary decision metric.
+This view is still not the primary deployment metric, but it confirms the trained-model path is now active in local recent backtests.
 
 ### Portfolio-Level Variant Comparison
 
-- `aggressive`: ROI `5.93%`, MaxDD `-2.27%`, Vol `9.72%`
-- `balanced`: ROI `6.02%`, MaxDD `-2.37%`, Vol `9.88%`
-- `quality`: ROI `7.38%`, MaxDD `-2.58%`, Vol `10.61%`
-- `elite`: ROI `8.46%`, MaxDD `-2.80%`, Vol `10.98%`
+- `aggressive`: ROI `10.92%`, MaxDD `-14.62%`, Vol `34.43%`
+- `balanced`: ROI `10.61%`, MaxDD `-14.96%`, Vol `34.83%`
+- `quality`: ROI `3.21%`, MaxDD `-12.67%`, Vol `25.59%`
+- `elite`: ROI `1.82%`, MaxDD `-13.80%`, Vol `24.81%`
+- `defensive`: ROI `1.14%`, MaxDD `-11.41%`, Vol `21.51%`
+- `risk_adjusted`: ROI `1.13%`, MaxDD `-11.28%`, Vol `21.37%`
+- `trained_selective`: ROI `5.42%`, MaxDD `-11.46%`, Vol `24.80%`
 
-Current default fallback preference: `elite`
+Current recent-backtest preferred variant (score-based selection): `aggressive`
 
 ## Important Caveats
 
-1. The current positive portfolio ROI is from the fallback portfolio construction path, not from the intended champion model path.
-2. `xgboost` is unavailable in the local runtime, so the recent backtest is not yet validating the benchmark-selected trained model.
-3. The fallback path is now useful as a resilient baseline, but it should not be treated as the final target architecture.
+1. `xgboost` is still unavailable in the local runtime.
+2. The trained-model path is now working through `logistic`, but its portfolio variants currently carry much higher drawdown and volatility than the older fallback baseline.
+3. The new optimization target is no longer "make trained models runnable"; it is now "make trained-model portfolio construction competitive on risk-adjusted terms."
 
 ### Trained-Model Path Status
 
 - `train_and_backtest.py` now runs the benchmark suite and attempts to persist the selected champion model.
 - The benchmark training path is runnable in the current environment.
-- Current blocker: `xgboost` dependency is unavailable locally, so champion persistence falls back with:
-  - `{'saved': False, 'reason': 'xgboost training failed'}`
+- Champion selection now ignores zero-result models.
+- Current local outcome:
+  - logistic becomes the valid champion
+  - persistence succeeds with `{'saved': True, 'model_name': 'logistic'}`
 - The final all-data XGBoost save step now degrades gracefully instead of crashing.
-- This means the repository can complete the benchmark orchestration flow, but cannot yet activate the intended trained XGBoost path until the local runtime has the dependency.
+- This means the repository can now complete benchmark orchestration and activate a trained local model path, even though the intended XGBoost path is still blocked by missing dependency support.
 
 ## What Is Stable Right Now
 
