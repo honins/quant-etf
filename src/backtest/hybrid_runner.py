@@ -9,7 +9,8 @@ from src.backtest.backtester import Backtester
 from src.backtest.strategy_config import StrategyConfig
 from src.data_loader.data_manager import DataManager
 from src.features.technical import FeatureEngineer
-from src.models.xgb_model import XGBoostModel
+from src.research.metrics import summarize_experiment_results
+from src.models.scoring_model import BaseModel
 from src.strategy.logic import StrategyFilter
 
 
@@ -35,7 +36,7 @@ def prepare_ticker_dataset(
     data_manager: DataManager,
     feature_eng: FeatureEngineer,
     index_df: pd.DataFrame,
-    model: XGBoostModel,
+    model: BaseModel,
     start_date: str,
     end_date: str | None = None,
 ) -> dict | None:
@@ -45,6 +46,7 @@ def prepare_ticker_dataset(
 
     df = feature_eng.calculate_technical_indicators(df)
     df = feature_eng.add_relative_strength(df, index_df, period=20)
+    df = feature_eng.add_regime_features(df, index_df)
     df = df.dropna()
 
     mask = df["trade_date"].astype(str) >= start_date
@@ -142,6 +144,75 @@ def build_adjusted_probs(
     return np.array(entry_probs), np.array(exit_probs), bear_days
 
 
+def apply_cross_sectional_filter(
+    data_cache: dict[str, dict],
+    market_status_map: dict[str, str],
+    config: StrategyConfig,
+) -> dict[str, dict]:
+    if not data_cache:
+        return data_cache
+
+    top_k = max(int(settings.CROSS_SECTION_TOP_K), 1)
+    min_score = float(settings.CROSS_SECTION_MIN_SCORE)
+    date_to_scores: dict[str, list[tuple[str, float]]] = {}
+
+    for code, payload in data_cache.items():
+        test_df = payload.get("test_df")
+        probs = payload.get("probs")
+        if test_df is None or probs is None:
+            continue
+        for i, raw_prob in enumerate(probs):
+            trade_date = str(test_df.iloc[i]["trade_date"])
+            current_status = market_status_map.get(trade_date, "Volatile Market")
+            status_bonus = 0.02 if current_status == "Bull Market" else (-0.04 if current_status == "Bear Market" else 0.0)
+            adjusted = float(raw_prob) + status_bonus
+            date_to_scores.setdefault(trade_date, []).append((code, adjusted))
+
+    survivors_by_date: dict[str, set[str]] = {}
+    for trade_date, pairs in date_to_scores.items():
+        ranked = sorted(pairs, key=lambda item: item[1], reverse=True)
+        core_pairs = [item for item in ranked if tickers.get_ticker_category(item[0]) == "core"]
+        satellite_pairs = [item for item in ranked if tickers.get_ticker_category(item[0]) == "satellite"]
+        unknown_pairs = [item for item in ranked if tickers.get_ticker_category(item[0]) not in {"core", "satellite"}]
+
+        core_top_k = max(int(settings.CROSS_SECTION_CORE_TOP_K), 0)
+        satellite_top_k = max(int(settings.CROSS_SECTION_SATELLITE_TOP_K), 0)
+
+        survivors = {
+            code
+            for code, score in core_pairs[:core_top_k] + satellite_pairs[:satellite_top_k]
+            if score >= min_score
+        }
+
+        if len(survivors) < top_k:
+            remaining_slots = top_k - len(survivors)
+            filler = [item for item in ranked if item[0] not in survivors]
+            survivors.update({code for code, score in filler[:remaining_slots] if score >= min_score})
+
+        if len(survivors) < top_k and unknown_pairs:
+            remaining_slots = top_k - len(survivors)
+            survivors.update({code for code, score in unknown_pairs[:remaining_slots] if score >= min_score})
+
+        survivors_by_date[trade_date] = survivors
+
+    filtered_cache: dict[str, dict] = {}
+    for code, payload in data_cache.items():
+        test_df = payload.get("test_df")
+        probs = payload.get("probs")
+        if test_df is None or probs is None:
+            continue
+        filtered_probs = []
+        for i, raw_prob in enumerate(probs):
+            trade_date = str(test_df.iloc[i]["trade_date"])
+            survivors = survivors_by_date.get(trade_date, set())
+            filtered_probs.append(float(raw_prob) if code in survivors else 0.0)
+        new_payload = dict(payload)
+        new_payload["probs"] = np.asarray(filtered_probs, dtype=float)
+        filtered_cache[code] = new_payload
+
+    return filtered_cache
+
+
 def run_backtest_for_cache(
     data_cache: dict[str, dict],
     backtester: Backtester,
@@ -151,8 +222,9 @@ def run_backtest_for_cache(
 ) -> list[dict]:
     config = config or StrategyConfig.from_settings()
     results = []
+    filtered_cache = apply_cross_sectional_filter(data_cache, market_status_map, config)
 
-    for code, payload in data_cache.items():
+    for code, payload in filtered_cache.items():
         test_df = payload["test_df"]
         probs = payload["probs"]
         use_dynamic = use_dynamic_for_code(code, threshold_overrides, config)
@@ -183,20 +255,19 @@ def run_backtest_for_cache(
 
 
 def summarize_results(results: list[dict]) -> dict[str, float]:
-    total_trades = sum(r["num_trades"] for r in results)
-    winning_trades = sum(int(round(r["win_rate"] * r["num_trades"])) for r in results)
-    avg_return = float(np.mean([r["total_return"] for r in results])) if results else 0.0
-    avg_max_drawdown = float(np.mean([r["max_drawdown"] for r in results])) if results else 0.0
-    avg_volatility = float(np.mean([r["volatility"] for r in results])) if results else 0.0
-    positive_ratio = float(np.mean([r["total_return"] > 0 for r in results])) if results else 0.0
-    overall_win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+    summary = summarize_experiment_results(results)
     return {
-        "avg_return": avg_return,
-        "avg_max_drawdown": avg_max_drawdown,
-        "avg_volatility": avg_volatility,
-        "positive_ratio": positive_ratio,
-        "overall_win_rate": overall_win_rate,
-        "total_trades": total_trades,
+        "avg_return": float(summary["avg_total_return"]),
+        "avg_annual_return": float(summary["avg_annual_return"]),
+        "avg_max_drawdown": float(summary["avg_max_drawdown"]),
+        "avg_volatility": float(summary["avg_volatility"]),
+        "avg_sharpe": float(summary["avg_sharpe"]),
+        "avg_calmar": float(summary["avg_calmar"]),
+        "avg_turnover": float(summary["avg_turnover"]),
+        "avg_holding_days": float(summary["avg_holding_days"]),
+        "positive_ratio": float(summary["positive_ratio"]),
+        "overall_win_rate": float(summary["overall_win_rate"]),
+        "total_trades": int(summary["total_trades"]),
     }
 
 
@@ -215,7 +286,7 @@ def build_data_cache(
     data_manager: DataManager,
     feature_eng: FeatureEngineer,
     index_df: pd.DataFrame,
-    model: XGBoostModel,
+    model: BaseModel,
     start_date: str,
     end_date: str | None = None,
 ) -> dict[str, dict]:

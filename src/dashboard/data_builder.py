@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from config import tickers
 from config.settings import settings
@@ -18,8 +20,14 @@ from src.backtest.strategy_config import StrategyConfig
 from src.data_loader.data_manager import DataManager
 from src.data_loader.tushare_loader import TushareLoader
 from src.features.technical import FeatureEngineer
+from src.models.model_registry import ModelRegistry
 from src.models.scoring_model import RuleBasedModel
-from src.models.xgb_model import XGBoostModel
+from src.portfolio.optimizer import PortfolioOptimizer
+from src.portfolio.replay import (
+    build_portfolio_backtest_report,
+    build_portfolio_variants,
+    replay_portfolio_allocations,
+)
 from src.strategy.logic import RiskManager, StrategyFilter
 from src.utils.explainer import TechnicalExplainer
 from src.utils.feishu_bot import FeishuBot
@@ -30,7 +38,7 @@ def _float_or_none(value: object, digits: int = 4) -> float | None:
     if value is None:
         return None
     try:
-        number = float(value)
+        number = float(str(value))
     except (TypeError, ValueError):
         return None
     if not np.isfinite(number):
@@ -164,9 +172,11 @@ def _format_compact_date(value: str) -> str:
 
 
 def _load_model():
-    model = XGBoostModel(model_path="data/xgb_model.json")
-    if model.load_model():
-        return model, "XGBoost"
+    registry = ModelRegistry()
+    for model_name in _resolve_live_model_order():
+        model = registry.create(model_name)
+        if callable(getattr(model, "load_model", None)) and model.load_model():
+            return model, model_name.title()
     return RuleBasedModel(), "Rules"
 
 
@@ -252,6 +262,7 @@ def build_live_snapshot(
         feature_df = model.prepare_data(feature_df)
         if not index_df.empty:
             feature_df = feature_eng.add_relative_strength(feature_df, index_df, period=20)
+            feature_df = feature_eng.add_regime_features(feature_df, index_df)
         scored_df = feature_df.dropna().copy()
 
         if len(scored_df) < 60:
@@ -391,16 +402,203 @@ def _serialize_backtest_results(results: list[dict]) -> list[dict]:
     return serialized
 
 
-def _serialize_summary(summary: dict[str, float], ticker_count: int) -> dict[str, float]:
+def _serialize_summary(summary: dict[str, float], ticker_count: int) -> dict[str, object]:
     return {
         "ticker_count": ticker_count,
         "avg_return_pct": _pct(summary["avg_return"]),
+        "avg_annual_return_pct": _pct(summary.get("avg_annual_return")),
         "avg_max_drawdown_pct": _pct(summary["avg_max_drawdown"]),
         "avg_volatility_pct": _pct(summary["avg_volatility"]),
+        "avg_sharpe": _float_or_none(summary.get("avg_sharpe"), 2),
+        "avg_calmar": _float_or_none(summary.get("avg_calmar"), 2),
+        "avg_turnover_pct": _pct(summary.get("avg_turnover")),
+        "avg_holding_days": _float_or_none(summary.get("avg_holding_days"), 1),
         "positive_ratio_pct": _pct(summary["positive_ratio"]),
         "overall_win_rate_pct": _pct(summary["overall_win_rate"]),
         "total_trades": int(summary["total_trades"]),
     }
+
+
+def _serialize_portfolio_backtest(summary: dict[str, object], report: dict[str, object]) -> dict[str, object]:
+    return {
+        "portfolio_roi_pct": _pct(summary.get("total_return"), 2),
+        "portfolio_volatility_pct": _pct(summary.get("volatility"), 2),
+        "portfolio_num_days": int(summary.get("num_days", 0) or 0),
+        "portfolio_max_drawdown_pct": _pct(report.get("max_drawdown"), 2),
+        "portfolio_ending_equity": _float_or_none(report.get("ending_equity"), 3),
+        "portfolio_positive_days": int(report.get("positive_days", 0) or 0),
+        "portfolio_negative_days": int(report.get("negative_days", 0) or 0),
+    }
+
+
+def _serialize_portfolio_variants(
+    variants: dict[str, dict[str, object]],
+) -> dict[str, dict[str, float | None]]:
+    serialized: dict[str, dict[str, float | None]] = {}
+    for name, payload in variants.items():
+        if not isinstance(payload, dict):
+            continue
+        replay = payload.get("replay", {}) if isinstance(payload.get("replay"), dict) else {}
+        report = payload.get("report", {}) if isinstance(payload.get("report"), dict) else {}
+        summary = replay.get("summary", {}) if isinstance(replay.get("summary"), dict) else {}
+        serialized[name] = {
+            "roi_pct": _pct(summary.get("total_return"), 2),
+            "max_drawdown_pct": _pct(report.get("max_drawdown"), 2),
+            "volatility_pct": _pct(summary.get("volatility"), 2),
+        }
+    return serialized
+
+
+def _build_portfolio_candidates(results: list[dict], signal_results: list[dict] | None = None) -> list[dict]:
+    signal_map = {item["code"]: item for item in (signal_results or [])}
+    candidates = []
+    for item in results:
+        signal = signal_map.get(item["code"], {})
+        confidence = signal.get("score")
+        if confidence is None:
+            confidence = max(0.0, min(1.0, (float(item.get("sharpe", 0.0)) + 2.0) / 4.0))
+        candidates.append(
+            {
+                "code": item["code"],
+                "name": item["name"],
+                "expected_return": float(item.get("total_return", 0.0)),
+                "downside_risk": float(item.get("max_drawdown", 0.0)),
+                "confidence": float(confidence),
+                "avg_correlation": 0.25,
+                "liquidity": float(signal.get("current_price") or 0.0),
+            }
+        )
+    return candidates
+
+
+def _serialize_portfolio_plan(plan: dict[str, object], signal_results: list[dict]) -> dict[str, object]:
+    weights = plan.get("weights", {}) or {}
+    score_table = plan.get("score_table")
+    signal_map = {item["code"]: item for item in signal_results}
+    recommendations = []
+    if isinstance(score_table, pd.DataFrame):
+        for _, row in score_table.iterrows():
+            code = str(row.get("code", ""))
+            signal = signal_map.get(code, {})
+            recommendations.append(
+                {
+                    "code": code,
+                    "name": signal.get("name", row.get("name", code)),
+                    "suggested_weight_pct": _pct(weights.get(code), 2),
+                    "expected_return_pct": _pct(float(row.get("expected_return", 0.0)), 2),
+                    "confidence": _float_or_none(row.get("confidence"), 3),
+                    "portfolio_score": _float_or_none(row.get("portfolio_score"), 3),
+                    "signal_score": signal.get("score"),
+                }
+            )
+    top_k_raw = plan.get("top_k", [])
+    expected_turnover_raw = plan.get("expected_turnover", 0.0)
+    return {
+        "top_k": list(top_k_raw) if isinstance(top_k_raw, list) else [],
+        "expected_turnover_pct": _pct(float(expected_turnover_raw) if expected_turnover_raw is not None else 0.0, 2),
+        "recommendations": recommendations,
+        "diagnostics": plan.get("diagnostics", {}),
+    }
+
+
+def _estimate_return_matrix(datasets: dict[str, pd.DataFrame], lookback_days: int) -> pd.DataFrame:
+    return_series = {}
+    for code, frame in datasets.items():
+        if frame.empty or "close" not in frame.columns:
+            continue
+        recent = frame.tail(lookback_days).copy()
+        if recent.empty:
+            continue
+        return_series[code] = recent["close"].pct_change().reset_index(drop=True)
+    if not return_series:
+        return pd.DataFrame()
+    return pd.DataFrame(return_series)
+
+
+def _estimate_trading_costs(signal_results: list[dict] | None) -> dict[str, float]:
+    costs: dict[str, float] = {}
+    for item in signal_results or []:
+        code = str(item.get("code", ""))
+        risk = item.get("risk", {}) or {}
+        atr = risk.get("atr") if isinstance(risk, dict) else None
+        price = item.get("current_price")
+        if atr is None or price in (None, 0):
+            costs[code] = 0.002
+            continue
+        costs[code] = min(max(float(atr) / float(price) * 0.10, 0.001), 0.01)
+    return costs
+
+
+def _load_latest_benchmark_selection() -> dict[str, object]:
+    candidates = sorted(
+        settings.REPORTS_DIR.glob("experiments/*_model_benchmark/benchmark_selection.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return {"champion": {}, "challenger": {}, "suite_dir": None}
+    latest = candidates[0]
+    try:
+        payload = json.loads(latest.read_text(encoding="utf-8"))
+    except Exception:
+        return {"champion": {}, "challenger": {}, "suite_dir": str(latest.parent)}
+    payload["suite_dir"] = str(latest.parent)
+    champion = payload.get("champion", {}) if isinstance(payload, dict) else {}
+    if isinstance(champion, dict) and float(champion.get("result_count", 0) or 0) <= 0:
+        payload["champion"] = {}
+        payload["challenger"] = {}
+    return payload
+
+
+def _load_benchmark_history() -> list[dict[str, object]]:
+    files = sorted(
+        settings.REPORTS_DIR.glob("experiments/*_model_benchmark/benchmark_history.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    aggregated: list[dict[str, object]] = []
+    for file_path in files[:10]:
+        try:
+            rows = json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict):
+                enriched = dict(row)
+                enriched["suite_dir"] = str(file_path.parent)
+                aggregated.append(enriched)
+    return aggregated
+
+
+def _resolve_live_model_order() -> list[str]:
+    selection = _load_latest_benchmark_selection()
+    champion = selection.get("champion", {}) if isinstance(selection, dict) else {}
+    preferred_name = str(champion.get("model_name", "")).strip().lower() if isinstance(champion, dict) else ""
+
+    suite_dir = selection.get("suite_dir") if isinstance(selection, dict) else None
+    use_champion = True
+    if suite_dir:
+        try:
+            modified = datetime.fromtimestamp(Path(str(suite_dir)).stat().st_mtime)
+            age_days = (datetime.now() - modified).days
+            use_champion = age_days <= settings.LIVE_MODEL_FREEZE_DAYS
+        except Exception:
+            use_champion = True
+
+    ordered = []
+    if use_champion and preferred_name:
+        ordered.append(preferred_name)
+    ordered.extend(["xgboost", "logistic"])
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for name in ordered:
+        if name and name not in seen:
+            unique.append(name)
+            seen.add(name)
+    return unique
 
 
 def _serialize_backtest_charts(
@@ -473,24 +671,25 @@ def _serialize_backtest_charts(
 
 
 def build_backtest_snapshot(
-    datasets: dict[str, object],
+    datasets: dict[str, pd.DataFrame],
     market_status_map: dict[str, str],
     lookback_days: int,
+    signal_results: list[dict] | None = None,
 ) -> dict:
     backtester = Backtester()
     config = StrategyConfig.from_settings()
     end_date = datetime.now()
     start_date = (end_date - timedelta(days=lookback_days)).strftime("%Y%m%d")
-    data_cache = {}
+    data_cache: dict[str, dict[str, object]] = {}
     for code in tickers.get_tradable_ticker_list():
         scored_df = datasets.get(code)
-        if scored_df is None or scored_df.empty:
+        if scored_df is None or not isinstance(scored_df, pd.DataFrame) or scored_df.empty:
             continue
         test_df = scored_df[scored_df["trade_date"].astype(str) >= start_date].copy()
         if len(test_df) < 10:
             continue
         probs = (
-            test_df["_score"].to_numpy()
+            np.asarray(test_df["_score"], dtype=float)
             if "_score" in test_df.columns
             else np.zeros(len(test_df), dtype=float)
         )
@@ -504,6 +703,25 @@ def build_backtest_snapshot(
     serialized_results = _serialize_backtest_results(results)
     serialized_charts = _serialize_backtest_charts(results, data_cache, lookback_days)
     summary = _serialize_summary(summarize_results(results), len(serialized_results))
+    portfolio_candidates = _build_portfolio_candidates(results, signal_results=signal_results)
+    portfolio_frame = pd.DataFrame(portfolio_candidates)
+    return_matrix = _estimate_return_matrix(datasets, lookback_days=lookback_days)
+    trading_costs = _estimate_trading_costs(signal_results)
+    portfolio_plan = PortfolioOptimizer().optimize(
+        portfolio_frame,
+        return_matrix=return_matrix,
+        trading_costs=trading_costs,
+    )
+    serialized_portfolio = _serialize_portfolio_plan(portfolio_plan, signal_results or [])
+    allocation_replay = replay_portfolio_allocations(portfolio_plan, datasets, lookback_days=lookback_days)
+    allocation_report = build_portfolio_backtest_report(allocation_replay)
+    portfolio_backtest = _serialize_portfolio_backtest(allocation_replay.get("summary", {}), allocation_report)
+    portfolio_variants_raw = build_portfolio_variants(results)
+    portfolio_variants = {}
+    for name, variant_plan in portfolio_variants_raw.items():
+        replay = replay_portfolio_allocations(variant_plan, datasets, lookback_days=lookback_days)
+        report = build_portfolio_backtest_report(replay)
+        portfolio_variants[name] = {"replay": replay, "report": report}
     return {
         "window_days": lookback_days,
         "start_date": start_date,
@@ -513,6 +731,11 @@ def build_backtest_snapshot(
         "summary": summary,
         "results": serialized_results,
         "charts": serialized_charts,
+        "portfolio": serialized_portfolio,
+        "allocation_replay": allocation_replay,
+        "allocation_report": allocation_report,
+        "portfolio_backtest": portfolio_backtest,
+        "portfolio_variants": _serialize_portfolio_variants(portfolio_variants),
     }
 
 
@@ -538,8 +761,10 @@ def build_dashboard_payload(history_days: int = 120) -> dict:
         history_days=history_days,
     )
     datasets = live_snapshot.pop("datasets")
-    backtest_90 = build_backtest_snapshot(datasets, market_status_map, lookback_days=90)
-    backtest_180 = build_backtest_snapshot(datasets, market_status_map, lookback_days=180)
+    backtest_90 = build_backtest_snapshot(datasets, market_status_map, lookback_days=90, signal_results=live_snapshot["results"])
+    backtest_180 = build_backtest_snapshot(datasets, market_status_map, lookback_days=180, signal_results=live_snapshot["results"])
+    benchmark_selection = _load_latest_benchmark_selection()
+    benchmark_selection["history"] = _load_benchmark_history()
 
     bt90_map = {item["code"]: item for item in backtest_90["results"]}
     bt180_map = {item["code"]: item for item in backtest_180["results"]}
@@ -592,6 +817,7 @@ def build_dashboard_payload(history_days: int = 120) -> dict:
         },
         "holdings": live_snapshot["holdings"],
         "histories": live_snapshot["histories"],
+        "benchmark": benchmark_selection,
         "backtests": {
             "90d": backtest_90,
             "180d": backtest_180,

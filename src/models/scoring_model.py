@@ -1,6 +1,11 @@
-from abc import ABC, abstractmethod
-import pandas as pd
 from datetime import datetime
+
+import numpy as np
+import pandas as pd
+from abc import ABC, abstractmethod
+
+from config import tickers
+from config.settings import settings
 
 class BaseModel(ABC):
     @abstractmethod
@@ -17,6 +22,19 @@ class BaseModel(ABC):
         """
         return df
 
+    def is_data_stale(self, trade_date: object) -> bool:
+        last_date_str = str(trade_date)
+        try:
+            last_date = datetime.strptime(last_date_str, "%Y%m%d")
+            return (datetime.now() - last_date).days > 5
+        except Exception:
+            return False
+
+    def predict_batch(self, df: pd.DataFrame) -> np.ndarray:
+        prepared = self.prepare_data(df.copy())
+        scores = [self.predict(prepared.iloc[: i + 1]) for i in range(len(prepared))]
+        return np.asarray(scores, dtype=float)
+
 class RuleBasedModel(BaseModel):
     """
     基于规则权重的透明评分模型
@@ -28,55 +46,170 @@ class RuleBasedModel(BaseModel):
         current = df.iloc[-1]
         prev = df.iloc[-2]
         
-        # 数据时效性检查：如果数据超过5天未更新，则视为无效
-        last_date_str = str(current['trade_date']) # 假设格式 YYYYMMDD
-        try:
-            last_date = datetime.strptime(last_date_str, "%Y%m%d")
-            if (datetime.now() - last_date).days > 5:
-                print(f"Warning: Data outdated ({last_date_str}). Score set to 0.")
-                return 0.0
-        except Exception:
-            pass # 日期解析失败忽略
+        if self.is_data_stale(current["trade_date"]):
+            print(f"Warning: Data outdated ({current['trade_date']}). Score set to 0.")
+            return 0.0
         
-        score = 0
-        total_weight = 0
-        
-        # 1. RSI (权重 30) - 寻找超卖反弹
-        # RSI < 30: 极度超卖 (满分)
-        # 30 < RSI < 50: 弱势区间 (半分)
-        w_rsi = 30
-        total_weight += w_rsi
-        if current['rsi_14'] < 30:
-            score += w_rsi
-        elif current['rsi_14'] < 50:
-            score += w_rsi * 0.5
-            
-        # 2. 均线趋势 (权重 30) - 价格在20日均线上方
-        w_trend = 30
-        total_weight += w_trend
-        if current['close'] > current['ma20']:
-            score += w_trend
-            
-        # 3. MACD 金叉 (权重 20)
-        w_macd = 20
-        total_weight += w_macd
-        # 今天 DIF > DEA 且 昨天 DIF <= DEA
-        if current['macd'] > current['macdsignal'] and prev['macd'] <= prev['macdsignal']:
-            score += w_macd
-        elif current['macd'] > current['macdsignal']: # 保持金叉状态
-            score += w_macd * 0.5
-            
-        # 4. 放量上涨 (权重 20)
-        w_vol = 20
-        total_weight += w_vol
-        if current['close'] > prev['close'] and current['vol'] > current['ma5_vol']: # 需要先计算 vol ma5
-             score += w_vol
-             
-        # 归一化到 0~1
-        final_score = score / total_weight
-        return round(final_score, 2)
+        return self._score_window(current, prev)
 
     def prepare_data(self, df):
         # 补充一些模型特有的临时计算
         df['ma5_vol'] = df['vol'].rolling(5).mean()
         return df
+
+    def _score_window(self, current: pd.Series, prev: pd.Series) -> float:
+        ticker = str(current.get('ts_code', '') or '')
+        category = tickers.get_ticker_category(ticker) if ticker else "unknown"
+        is_wide_index = ticker in set(tickers.CORE_TRADE_TICKERS[:6]) if ticker else False
+        market_trend_strength = float(current.get('market_trend_strength', 0.0) or 0.0)
+        market_above_ma20 = float(current.get('market_above_ma20', 0.0) or 0.0)
+        market_return_20d = float(current.get('market_return_20d', 0.0) or 0.0)
+        market_volatility_20d = float(current.get('market_volatility_20d', 0.0) or 0.0)
+        relative_strength = float(current.get('rs_20d', 0.0) or 0.0)
+        breakout_20 = float(current.get('breakout_20', 0.0) or 0.0)
+        drawdown_20 = float(current.get('drawdown_20', 0.0) or 0.0)
+        atr_pct = float(current.get('atr_pct', 0.0) or 0.0)
+        ma20_slope_5 = float(current.get('ma20_slope_5', 0.0) or 0.0)
+        ret_5 = float(current.get('ret_5', 0.0) or 0.0)
+
+        if market_trend_strength < -0.02 and market_above_ma20 <= 0:
+            return 0.0
+        if market_return_20d < -0.03 and relative_strength <= 0:
+            return 0.0
+        if market_volatility_20d > 0.45 and breakout_20 <= 0:
+            return 0.0
+        if category == "satellite" and market_trend_strength < 0 and relative_strength <= 0:
+            return 0.0
+        if category == "satellite" and atr_pct > 0.04 and breakout_20 <= 0:
+            return 0.0
+        if category == "core" and drawdown_20 < -0.08 and market_return_20d < 0:
+            return 0.0
+        if is_wide_index and (market_trend_strength < 0 or market_return_20d < 0) and breakout_20 <= 0:
+            return 0.0
+        if is_wide_index and ma20_slope_5 < 0 and ret_5 < 0:
+            return 0.0
+
+        score = 0.0
+        total_weight = 0.0
+
+        w_rsi = 15.0
+        total_weight += w_rsi
+        if current['rsi_14'] < 35:
+            score += w_rsi * 0.7
+        elif 35 <= current['rsi_14'] <= 62:
+            score += w_rsi
+        elif current['rsi_14'] < 72:
+            score += w_rsi * 0.5
+
+        w_trend = 20.0
+        total_weight += w_trend
+        if current['close'] > current['ma20']:
+            score += w_trend * 0.7
+        if current['ma20'] > current['ma60']:
+            score += w_trend * 0.3
+
+        w_macd = 15.0
+        total_weight += w_macd
+        if current['macd'] > current['macdsignal'] and prev['macd'] <= prev['macdsignal']:
+            score += w_macd
+        elif current['macd'] > current['macdsignal']:
+            score += w_macd * 0.6
+
+        w_vol = 10.0
+        total_weight += w_vol
+        if current['close'] > prev['close'] and current['vol'] > current['ma5_vol']:
+            score += w_vol
+        elif current['vol_ratio'] > 1.0:
+            score += w_vol * 0.5
+
+        w_breakout = 10.0
+        total_weight += w_breakout
+        if breakout_20 > 0:
+            score += w_breakout
+        elif float(current.get('drawdown_20', 0.0) or 0.0) > -0.03:
+            score += w_breakout * 0.4
+
+        w_relative = 10.0
+        total_weight += w_relative
+        if float(current.get('rs_20d', 0.0) or 0.0) > 0:
+            score += w_relative
+        elif float(current.get('rel_vol', 1.0) or 1.0) < 1.1:
+            score += w_relative * 0.4
+
+        w_regime = 20.0
+        total_weight += w_regime
+        if market_trend_strength > 0 and market_above_ma20 > 0:
+            score += w_regime * 0.8
+        if market_return_20d > 0:
+            score += w_regime * 0.2
+        if market_volatility_20d > 0.35:
+            score -= w_regime * 0.35
+
+        if relative_strength < -0.03:
+            score -= 8.0
+        if breakout_20 < -0.02:
+            score -= 6.0
+        if drawdown_20 < -0.05:
+            score -= 5.0
+        if atr_pct > 0.03:
+            score -= 4.0
+
+        if category == "core":
+            if market_trend_strength > 0:
+                score += 4.0
+            if relative_strength > -0.01:
+                score += 3.0
+            if ma20_slope_5 < 0:
+                score -= 5.0
+            if ret_5 < 0:
+                score -= 4.0
+        elif category == "satellite":
+            if breakout_20 <= 0:
+                score -= 5.0
+            if market_volatility_20d > 0.30:
+                score -= 5.0
+
+        if is_wide_index and breakout_20 <= 0:
+            score -= 5.0
+        if is_wide_index and market_above_ma20 <= 0:
+            score -= 6.0
+        if is_wide_index and market_trend_strength <= 0:
+            score -= 5.0
+
+        if ticker.endswith('.SZ') and market_volatility_20d > 0.30:
+            score -= 5.0
+
+        final_score = max(0.0, min(score / total_weight, 1.0)) if total_weight > 0 else 0.0
+        if category == "satellite":
+            final_score *= 0.88
+        elif category == "core":
+            final_score *= 1.03
+        if is_wide_index:
+            final_score *= 0.9
+        if ticker and ticker.endswith('.SZ'):
+            final_score *= 0.92
+        return round(final_score, 2)
+
+    def predict_batch(self, df: pd.DataFrame) -> np.ndarray:
+        prepared = self.prepare_data(df.copy())
+        if prepared.empty:
+            return np.zeros(0, dtype=float)
+
+        latest_trade_date = prepared.iloc[-1]["trade_date"] if "trade_date" in prepared.columns else None
+        apply_stale_guard = self.is_data_stale(latest_trade_date)
+
+        scores = []
+        for i in range(len(prepared)):
+            window = prepared.iloc[: i + 1]
+            if not apply_stale_guard:
+                current = window.iloc[-1]
+                prev = window.iloc[-2] if len(window) >= 2 else current
+                if len(window) < 30:
+                    scores.append(0.0)
+                    continue
+                scores.append(self._score_window(current, prev))
+                continue
+
+            scores.append(self.predict(window))
+
+        return np.asarray(scores, dtype=float)

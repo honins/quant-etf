@@ -56,5 +56,11 @@ class Settings:
     TRAIN_LABEL_END_WEIGHT = 0.30
     TRAIN_LABEL_DRAWDOWN_PENALTY = 1.20
 
+    LIVE_MODEL_FREEZE_DAYS = int(os.getenv("LIVE_MODEL_FREEZE_DAYS", "7"))
+    CROSS_SECTION_TOP_K = int(os.getenv("CROSS_SECTION_TOP_K", "6"))
+    CROSS_SECTION_MIN_SCORE = float(os.getenv("CROSS_SECTION_MIN_SCORE", "0.58"))
+    CROSS_SECTION_CORE_TOP_K = int(os.getenv("CROSS_SECTION_CORE_TOP_K", "0"))
+    CROSS_SECTION_SATELLITE_TOP_K = int(os.getenv("CROSS_SECTION_SATELLITE_TOP_K", "0"))
+
 
 settings = Settings()

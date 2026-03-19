@@ -80,11 +80,87 @@ export type BacktestResult = {
 export type BacktestSummary = {
   ticker_count: number;
   avg_return_pct: number | null;
+  avg_annual_return_pct?: number | null;
   avg_max_drawdown_pct: number | null;
   avg_volatility_pct: number | null;
+  avg_sharpe?: number | null;
+  avg_calmar?: number | null;
+  avg_turnover_pct?: number | null;
+  avg_holding_days?: number | null;
   positive_ratio_pct: number | null;
   overall_win_rate_pct: number | null;
   total_trades: number;
+};
+
+export type PortfolioRecommendation = {
+  code: string;
+  name: string;
+  suggested_weight_pct: number | null;
+  expected_return_pct: number | null;
+  confidence: number | null;
+  portfolio_score: number | null;
+  signal_score: number | null;
+};
+
+export type PortfolioPlan = {
+  top_k: string[];
+  expected_turnover_pct: number | null;
+  recommendations: PortfolioRecommendation[];
+  diagnostics?: Record<string, number | string>;
+};
+
+export type AllocationReplayPoint = {
+  day: number;
+  equity: number;
+  daily_return: number;
+};
+
+export type AllocationReplay = {
+  series: AllocationReplayPoint[];
+  summary: {
+    total_return: number;
+    volatility: number;
+    num_days: number;
+  };
+};
+
+export type AllocationReport = {
+  max_drawdown: number;
+  ending_equity: number;
+  positive_days: number;
+  negative_days: number;
+};
+
+export type PortfolioBacktestSummary = {
+  portfolio_roi_pct: number | null;
+  portfolio_volatility_pct: number | null;
+  portfolio_num_days: number;
+  portfolio_max_drawdown_pct: number | null;
+  portfolio_ending_equity: number | null;
+  portfolio_positive_days: number;
+  portfolio_negative_days: number;
+};
+
+export type PortfolioVariantSummary = {
+  roi_pct: number | null;
+  max_drawdown_pct: number | null;
+  volatility_pct: number | null;
+};
+
+export type BenchmarkSelectionEntry = {
+  model_name?: string;
+  validation_mode?: string;
+  avg_total_return?: number;
+  avg_sharpe?: number;
+  avg_max_drawdown?: number;
+  selection_score?: number;
+};
+
+export type BenchmarkSelection = {
+  champion: BenchmarkSelectionEntry;
+  challenger: BenchmarkSelectionEntry;
+  suite_dir?: string | null;
+  history?: BenchmarkSelectionEntry[];
 };
 
 export type BacktestBoard = {
@@ -96,6 +172,11 @@ export type BacktestBoard = {
   summary: BacktestSummary;
   results: BacktestResult[];
   charts: Record<string, BacktestChart>;
+  portfolio: PortfolioPlan;
+  allocation_replay: AllocationReplay;
+  allocation_report: AllocationReport;
+  portfolio_backtest: PortfolioBacktestSummary;
+  portfolio_variants?: Record<string, PortfolioVariantSummary>;
 };
 
 export type BacktestChartPoint = {
@@ -156,6 +237,7 @@ export type DashboardPayload = {
   };
   holdings: HoldingItem[];
   histories: Record<string, Array<{ date: string; close: number | null; ma20: number | null; ma60: number | null; score: number | null }>>;
+  benchmark: BenchmarkSelection;
   backtests: {
     "90d": BacktestBoard;
     "180d": BacktestBoard;

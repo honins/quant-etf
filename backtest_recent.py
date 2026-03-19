@@ -19,7 +19,14 @@ from src.backtest.strategy_config import StrategyConfig
 from src.data_loader.data_manager import DataManager
 from src.data_loader.tushare_loader import TushareLoader
 from src.features.technical import FeatureEngineer
-from src.models.xgb_model import XGBoostModel
+from src.dashboard.data_builder import _resolve_live_model_order
+from src.models.model_registry import ModelRegistry
+from src.portfolio.replay import (
+    build_portfolio_backtest_report,
+    build_portfolio_variants,
+    build_weighted_portfolio_plan,
+    replay_portfolio_allocations,
+)
 from src.strategy.logic import StrategyFilter
 
 
@@ -76,6 +83,65 @@ def _print_results(results: list[dict], start_date_str: str, select_mode: bool):
     print(f"Average Drawdown: {summary['avg_max_drawdown'] * 100:.2f}%")
     print(f"Trades: {summary['total_trades']}")
     print("=" * 80)
+
+
+def _build_portfolio_summary(data_cache: dict[str, dict], results: list[dict]) -> dict:
+    variants = build_portfolio_variants(results)
+    datasets = {
+        code: payload["test_df"]
+        for code, payload in data_cache.items()
+        if "test_df" in payload
+    }
+
+    variant_outputs = {}
+    for variant_name, portfolio_plan in variants.items():
+        weights = portfolio_plan.get("weights", {}) or {}
+        if not weights:
+            variant_outputs[variant_name] = {
+                "replay": {"series": [], "summary": {"total_return": 0.0, "volatility": 0.0, "num_days": 0}},
+                "report": {"max_drawdown": 0.0, "ending_equity": 1.0, "positive_days": 0, "negative_days": 0},
+            }
+            continue
+
+        replay = replay_portfolio_allocations(portfolio_plan, datasets, lookback_days=90)
+        report = build_portfolio_backtest_report(replay)
+        variant_outputs[variant_name] = {"replay": replay, "report": report}
+
+    if not variant_outputs:
+        return {
+            "replay": {"series": [], "summary": {"total_return": 0.0, "volatility": 0.0, "num_days": 0}},
+            "report": {"max_drawdown": 0.0, "ending_equity": 1.0, "positive_days": 0, "negative_days": 0},
+            "variants": {},
+        }
+
+    preferred_name = None
+    preferred = None
+    best_score = None
+    for variant_name, payload in variant_outputs.items():
+        replay = payload.get("replay", {}) if isinstance(payload, dict) else {}
+        report = payload.get("report", {}) if isinstance(payload, dict) else {}
+        summary = replay.get("summary", {}) if isinstance(replay, dict) else {}
+        roi = float(summary.get("total_return", 0.0))
+        vol = float(summary.get("volatility", 0.0))
+        max_drawdown = abs(float(report.get("max_drawdown", 0.0)))
+        score = roi - 0.30 * max_drawdown - 0.08 * vol
+        if best_score is None or score > best_score:
+            best_score = score
+            preferred_name = variant_name
+            preferred = payload
+
+    if preferred is None:
+        return {
+            "replay": {"series": [], "summary": {"total_return": 0.0, "volatility": 0.0, "num_days": 0}},
+            "report": {"max_drawdown": 0.0, "ending_equity": 1.0, "positive_days": 0, "negative_days": 0},
+            "variants": variant_outputs,
+        }
+    return {
+        "replay": preferred["replay"],
+        "report": preferred["report"],
+        "variants": variant_outputs,
+        "preferred_variant": preferred_name,
+    }
 
     def summarize_group(title: str, codes: list[str]):
         group = [r for r in results if r["code"] in codes]
@@ -204,6 +270,22 @@ def main():
     show_chart = _env_flag("SHOW_CHART", default=False)
     chart_codes = _parse_codes_env("CHART_CODES")
 
+    cross_section_top_k_env = os.getenv("CROSS_SECTION_TOP_K", "").strip()
+    if cross_section_top_k_env:
+        settings.CROSS_SECTION_TOP_K = int(cross_section_top_k_env)
+
+    cross_section_min_score_env = os.getenv("CROSS_SECTION_MIN_SCORE", "").strip()
+    if cross_section_min_score_env:
+        settings.CROSS_SECTION_MIN_SCORE = float(cross_section_min_score_env)
+
+    cross_section_core_top_k_env = os.getenv("CROSS_SECTION_CORE_TOP_K", "").strip()
+    if cross_section_core_top_k_env:
+        settings.CROSS_SECTION_CORE_TOP_K = int(cross_section_core_top_k_env)
+
+    cross_section_satellite_top_k_env = os.getenv("CROSS_SECTION_SATELLITE_TOP_K", "").strip()
+    if cross_section_satellite_top_k_env:
+        settings.CROSS_SECTION_SATELLITE_TOP_K = int(cross_section_satellite_top_k_env)
+
     grid_thresholds = []
     if grid_thresholds_env:
         grid_thresholds = [float(x.strip()) for x in grid_thresholds_env.split(",") if x.strip()]
@@ -244,11 +326,19 @@ def main():
     strat_filter = StrategyFilter()
     config = StrategyConfig.from_settings()
 
-    model = XGBoostModel(model_path="data/xgb_model.json")
-    if not model.load_model():
-        print("XGBoost model not found. Please train first.")
-        return
-    print("XGBoost model loaded.")
+    registry = ModelRegistry()
+    model = None
+    model_name = "Rules"
+    for candidate_name in _resolve_live_model_order():
+        candidate = registry.create(candidate_name)
+        if callable(getattr(candidate, "load_model", None)) and candidate.load_model():
+            model = candidate
+            model_name = candidate_name.title()
+            break
+    if model is None:
+        model = registry.create("rules")
+        model_name = "Rules"
+    print(f"Model loaded: {model_name}")
 
     index_df, market_status_map = prepare_index_data(data_manager, feature_eng, strat_filter, index_code="000300.SH")
 
@@ -401,6 +491,27 @@ def main():
 
     results = run_with_overrides(override_thresholds)
     _print_results(results, start_date_str, select_mode=False)
+    portfolio = _build_portfolio_summary(data_cache, results)
+    replay = portfolio["replay"]
+    report = portfolio["report"]
+    print(
+        f"Portfolio ROI: {replay['summary']['total_return'] * 100:.2f}% | "
+        f"Portfolio MaxDD: {report['max_drawdown'] * 100:.2f}% | "
+        f"Portfolio Vol: {replay['summary']['volatility'] * 100:.2f}% | "
+        f"Ending Equity: {report['ending_equity']:.3f}"
+    )
+    variants = portfolio.get("variants", {})
+    if isinstance(variants, dict) and variants:
+        print("Portfolio Variants:")
+        for variant_name, payload in variants.items():
+            variant_replay = payload.get("replay", {}) if isinstance(payload, dict) else {}
+            variant_report = payload.get("report", {}) if isinstance(payload, dict) else {}
+            variant_summary = variant_replay.get("summary", {}) if isinstance(variant_replay, dict) else {}
+            print(
+                f"  - {variant_name}: ROI {float(variant_summary.get('total_return', 0.0)) * 100:.2f}% | "
+                f"MaxDD {float(variant_report.get('max_drawdown', 0.0)) * 100:.2f}% | "
+                f"Vol {float(variant_summary.get('volatility', 0.0)) * 100:.2f}%"
+            )
     if show_chart:
         _print_trade_charts(results, data_cache, chart_codes=chart_codes)
 
